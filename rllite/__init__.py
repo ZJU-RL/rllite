@@ -1,1 +1,10 @@
-# coding: utf-8
+import rllite.A2C
+import rllite.ACER
+import rllite.DDPG
+import rllite.GAIL
+import rllite.HER
+import rllite.PG
+import rllite.PPO
+import rllite.SAC
+import rllite.SQL
+import rllite.TD3

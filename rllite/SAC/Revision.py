@@ -11,8 +11,6 @@ from gym_utils import get_action_bound, get_state_dimension, get_action_dimensio
 from replay_buffer import ReplayBuffer
 from model import VCritic, SoftQCritic, SACActor, NormalizedActions
 from tqdm import trange
-from IPython.display import clear_output
-# import matplotlib.pyplot as plt
 
 from tensorboardX import SummaryWriter
 writer = SummaryWriter(log_dir="log")

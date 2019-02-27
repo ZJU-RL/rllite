@@ -9,7 +9,7 @@ from gym_utils import get_state_dimension, get_action_dimension
 from replay_buffer import ReplayBuffer
 from model import VCritic, SoftQCritic, SACActor, NormalizedActions
 from tqdm import trange
-from IPython.display import clear_output
+
 import matplotlib.pyplot as plt
 
 mean_lambda = 1e-3
