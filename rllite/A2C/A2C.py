@@ -10,7 +10,8 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 
 import matplotlib.pyplot as plt
-from multiprocessing_env import SubprocVecEnv
+
+from vec_env import DummyVecEnv
 
 use_cuda = torch.cuda.is_available()
 device   = torch.device("cuda" if use_cuda else "cpu")
@@ -26,7 +27,7 @@ def make_env():
     return _thunk
 
 envs = [make_env() for i in range(num_envs)]
-envs = SubprocVecEnv(envs)
+envs = DummyVecEnv(envs)
 env = gym.make(env_name)
 
 class ActorCritic(nn.Module):
@@ -92,14 +93,13 @@ num_steps   = 5
 model = ActorCritic(num_inputs, num_outputs, hidden_size).to(device)
 optimizer = optim.Adam(model.parameters())
 
-max_frames   = 2000
+max_frames   = 2e6
 frame_idx    = 0
 test_rewards = []
 
 state = envs.reset()
 
 while frame_idx < max_frames:
-    print(frame_idx)
     log_probs = []
     values    = []
     rewards   = []
@@ -125,7 +125,7 @@ while frame_idx < max_frames:
         frame_idx += 1
         
         if frame_idx % 1000 == 0:
-            test_rewards.append(np.mean([test_env(True) for _ in range(10)]))
+            test_rewards.append(np.mean([test_env(False) for _ in range(10)]))
             plot(frame_idx, test_rewards)
             
     next_state = torch.FloatTensor(next_state).to(device)

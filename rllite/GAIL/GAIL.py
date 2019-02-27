@@ -14,9 +14,9 @@ import matplotlib.pyplot as plt
 use_cuda = torch.cuda.is_available()
 device   = torch.device("cuda" if use_cuda else "cpu")
 
-from multiprocessing_env import SubprocVecEnv
+from vec_env import DummyVecEnv
 
-num_envs = 16
+num_envs = 8
 env_name = "Pendulum-v0"
 
 def make_env():
@@ -27,7 +27,7 @@ def make_env():
     return _thunk
 
 envs = [make_env() for i in range(num_envs)]
-envs = SubprocVecEnv(envs)
+envs = DummyVecEnv(envs)
 
 env = gym.make(env_name)
 
@@ -121,7 +121,7 @@ def ppo_update(ppo_epochs, mini_batch_size, states, actions, log_probs, returns,
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
+# Loading expert trajectories from PPO        
 try:
     expert_traj = np.load("expert_traj.npy")
 except:
