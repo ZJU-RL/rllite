@@ -1,5 +1,4 @@
-from rllite.utils import *
-from rllite.algo import SAC
+from rllite import SAC
 
 # set
 model = SAC(

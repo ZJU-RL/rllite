@@ -1,112 +1,117 @@
+# -*- coding: utf-8 -*-
+
+import gym
 import numpy as np
+
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
-import torch.nn.functional as F
-import utils
+import torch.optim as optim
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from rllite.common import ReplayBuffer,NormalizedActions,PolicyNet,QNet,OUNoise,plot,soft_update
 
-class Actor(nn.Module):
-	def __init__(self, state_dim, action_dim, max_action):
-		super(Actor, self).__init__()
-
-		self.l1 = nn.Linear(state_dim, 400)
-		self.l2 = nn.Linear(400, 300)
-		self.l3 = nn.Linear(300, action_dim)
-		
-		self.max_action = max_action
-
-	
-	def forward(self, x):
-		x = F.relu(self.l1(x))
-		x = F.relu(self.l2(x))
-		x = self.max_action * torch.tanh(self.l3(x)) 
-		return x 
-
-
-class Critic(nn.Module):
-	def __init__(self, state_dim, action_dim):
-		super(Critic, self).__init__()
-
-		self.l1 = nn.Linear(state_dim, 400)
-		self.l2 = nn.Linear(400 + action_dim, 300)
-		self.l3 = nn.Linear(300, 1)
-
-
-	def forward(self, x, u):
-		x = F.relu(self.l1(x))
-		x = F.relu(self.l2(torch.cat([x, u], 1)))
-		x = self.l3(x)
-		return x 
-
-
-class DDPG(object):
-	def __init__(self, state_dim, action_dim, max_action):
-		self.actor = Actor(state_dim, action_dim, max_action).to(device)
-		self.actor_target = Actor(state_dim, action_dim, max_action).to(device)
-		self.actor_target.load_state_dict(self.actor.state_dict())
-		self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=1e-4)
-
-		self.critic = Critic(state_dim, action_dim).to(device)
-		self.critic_target = Critic(state_dim, action_dim).to(device)
-		self.critic_target.load_state_dict(self.critic.state_dict())
-		self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), weight_decay=1e-2)		
-
-
-	def select_action(self, state):
-		state = torch.FloatTensor(state.reshape(1, -1)).to(device)
-		return self.actor(state).cpu().data.numpy().flatten()
-
-
-	def train(self, replay_buffer, iterations, batch_size=64, discount=0.99, tau=0.001):
-
-		for it in range(iterations):
-
-			# Sample replay buffer 
-			x, y, u, r, d = replay_buffer.sample(batch_size)
-			state = torch.FloatTensor(x).to(device)
-			action = torch.FloatTensor(u).to(device)
-			next_state = torch.FloatTensor(y).to(device)
-			done = torch.FloatTensor(1 - d).to(device)
-			reward = torch.FloatTensor(r).to(device)
-
-			# Compute the target Q value
-			target_Q = self.critic_target(next_state, self.actor_target(next_state))
-			target_Q = reward + (done * discount * target_Q).detach()
-
-			# Get current Q estimate
-			current_Q = self.critic(state, action)
-
-			# Compute critic loss
-			critic_loss = F.mse_loss(current_Q, target_Q)
-
-			# Optimize the critic
-			self.critic_optimizer.zero_grad()
-			critic_loss.backward()
-			self.critic_optimizer.step()
-
-			# Compute actor loss
-			actor_loss = -self.critic(state, self.actor(state)).mean()
-			
-			# Optimize the actor 
-			self.actor_optimizer.zero_grad()
-			actor_loss.backward()
-			self.actor_optimizer.step()
-
-			# Update the frozen target models
-			for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
-				target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
-
-			for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
-				target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
-
-
-	def save(self, filename, directory):
-		torch.save(self.actor.state_dict(), '%s/%s_actor.pth' % (directory, filename))
-		torch.save(self.critic.state_dict(), '%s/%s_critic.pth' % (directory, filename))
-
-
-	def load(self, filename, directory):
-		self.actor.load_state_dict(torch.load('%s/%s_actor.pth' % (directory, filename)))
-		self.critic.load_state_dict(torch.load('%s/%s_critic.pth' % (directory, filename)))
+device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+class DDPG():
+    def __init__(self):
+        self.env = NormalizedActions(gym.make("Pendulum-v0"))
+        self.ou_noise = OUNoise(self.env.action_space)
+        
+        state_dim  = self.env.observation_space.shape[0]
+        action_dim = self.env.action_space.shape[0]
+        hidden_dim = 256
+        
+        self.value_net  = QNet(state_dim, action_dim, hidden_dim).to(device)
+        self.policy_net = PolicyNet(state_dim, action_dim, hidden_dim).to(device)
+        
+        self.target_value_net  = QNet(state_dim, action_dim, hidden_dim).to(device)
+        self.target_policy_net = PolicyNet(state_dim, action_dim, hidden_dim).to(device)
+        
+        soft_update(self.value_net, self.target_value_net, soft_tau=1.0)
+        soft_update(self.policy_net, self.target_policy_net, soft_tau=1.0)
+            
+        value_lr  = 1e-3
+        policy_lr = 1e-4
+        
+        self.value_optimizer  = optim.Adam(self.value_net.parameters(),  lr=value_lr)
+        self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
+        
+        self.value_criterion = nn.MSELoss()
+        
+        replay_buffer_size = 1000000
+        self.replay_buffer = ReplayBuffer(replay_buffer_size)
+        
+        self.max_frames  = 12000
+        self.max_steps   = 500
+        self.frame_idx   = 0
+        self.rewards     = []
+        self.batch_size  = 128
+        
+    def train_step(
+            self,
+            gamma = 0.99,
+            min_value=-np.inf,
+            max_value=np.inf,
+            soft_tau=1e-2
+            ):
+    
+        state, action, reward, next_state, done = self.replay_buffer.sample(self.batch_size)
+        
+        state      = torch.FloatTensor(state).to(device)
+        next_state = torch.FloatTensor(next_state).to(device)
+        action     = torch.FloatTensor(action).to(device)
+        reward     = torch.FloatTensor(reward).unsqueeze(1).to(device)
+        done       = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
+    
+        policy_loss = self.value_net(state, self.policy_net(state))
+        policy_loss = -policy_loss.mean()
+    
+        next_action    = self.target_policy_net(next_state)
+        target_value   = self.target_value_net(next_state, next_action.detach())
+        expected_value = reward + (1.0 - done) * gamma * target_value
+        expected_value = torch.clamp(expected_value, min_value, max_value)
+    
+        value = self.value_net(state, action)
+        value_loss = self.value_criterion(value, expected_value.detach())
+    
+    
+        self.policy_optimizer.zero_grad()
+        policy_loss.backward()
+        self.policy_optimizer.step()
+    
+        self.value_optimizer.zero_grad()
+        value_loss.backward()
+        self.value_optimizer.step()
+    
+        soft_update(self.value_net, self.target_value_net, soft_tau)
+        soft_update(self.policy_net, self.target_policy_net, soft_tau)
+        
+    def learn(self):
+        while self.frame_idx < self.max_frames:
+            state = self.env.reset()
+            self.ou_noise.reset()
+            episode_reward = 0
+            
+            for step in range(self.max_steps):
+                action = self.policy_net.get_action(state)
+                action = self.ou_noise.get_action(action, step)
+                next_state, reward, done, _ = self.env.step(action)
+                
+                self.replay_buffer.push(state, action, reward, next_state, done)
+                if len(self.replay_buffer) > self.batch_size:
+                    self.train_step()
+                
+                state = next_state
+                episode_reward += reward
+                self.frame_idx += 1
+                
+                if self.frame_idx % max(1000, self.max_steps + 1) == 0:
+                    plot(self.frame_idx, self.rewards)
+                
+                if done:
+                    break
+            
+            self.rewards.append(episode_reward)
+            
+if __name__ == '__main__':
+    model = DDPG()
+    model.learn()

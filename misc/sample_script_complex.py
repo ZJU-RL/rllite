@@ -1,5 +1,5 @@
 import gym
-from rllite.algo import SAC
+from rllite import SAC
 
 # maybe yourself gym environment
 env = gym.make('Pendulum-v0')

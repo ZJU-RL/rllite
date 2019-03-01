@@ -11,7 +11,7 @@ from torch.distributions import Categorical
 
 import matplotlib.pyplot as plt
 
-from vec_env import DummyVecEnv
+from common.vec_env import DummyVecEnv
 
 use_cuda = torch.cuda.is_available()
 device   = torch.device("cuda" if use_cuda else "cpu")

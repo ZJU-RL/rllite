@@ -1,157 +1,138 @@
-import numpy as np
+# -*- coding: utf-8 -*-
+
 import gym
-import gym.spaces
+import numpy as np
+
 import torch
-import torch.optim as optim
 import torch.nn as nn
+import torch.optim as optim
 
-from gym_utils import get_state_dimension, get_action_dimension
-from replay_buffer import ReplayBuffer
-from model import VCritic, SoftQCritic, SACActor, NormalizedActions
-from tqdm import trange
+from rllite.common import ReplayBuffer,NormalizedActions,ValueNet,SoftQNet,PolicyNet2,plot,soft_update
 
-import matplotlib.pyplot as plt
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")     
 
-mean_lambda = 1e-3
-std_lambda = 1e-3
-z_lambda = 0.0
+class SAC():
+    def __init__(self):
+        self.env = NormalizedActions(gym.make("Pendulum-v0"))
 
-cuda_avail = torch.cuda.is_available()
-device = torch.device("cuda" if cuda_avail else "cpu")
-
-def get_loss(val, next_val):
-    criterion = nn.MSELoss()
-    return criterion(val, next_val)
-
-def send_to_device(s, a, r, next_s, done):
-    s = torch.FloatTensor(s).to(device)
-    a = torch.FloatTensor(a).to(device)
-    r = torch.FloatTensor(r).unsqueeze(1).to(device)
-    next_s = torch.FloatTensor(next_s).to(device)
-    done = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
-
-    return s, a, r, next_s, done
-
-def run_episode(actor, buffer, v_critic, target_v_critic, q_critic, env, gamma, freq, max_steps, global_step, v_optimizer, q_optimizer, actor_optimizer, evaluation=False):
-    state = env.reset()
-    done = False
-    total_reward = 0
-    #train_rewards = []
-    #test_rewards = []
-    for _ in range(max_steps):
-        action = actor.get_action(state)
-        next_state, reward, done, _ = env.step(action)
-        if not evaluation:
-            buffer.add(state, action, reward, next_state, done)
-
-            if 256 < len(buffer):
-                s, a, r, next_s, d = buffer.sample_batch(256)
-                s, a, r, next_s, d = send_to_device(s, a, r, next_s, d) 
-                
-                q = q_critic.forward(s, a)
-                v = v_critic.forward(s)
-                new_a, log_prob, z, mean, log_std = actor.evaluate(s)
-
-                target_v = target_v_critic.forward(next_s)
-                next_q = r + (1 - d) * gamma * target_v
-                q_loss = get_loss(q, next_q.detach())
-
-                new_q = q_critic.forward(s, new_a)
-                next_v = new_q - log_prob
-                v_loss = get_loss(v, next_v.detach())
-
-                log_prob_target = new_q - v
-                actor_loss = (log_prob * (log_prob - log_prob_target).detach()).mean()
-
-                #regularization losses
-                mean_loss = mean_lambda * mean.pow(2).mean()
-                std_loss = std_lambda * log_std.pow(2).mean()
-                z_loss = z_lambda * z.pow(2).sum(1).mean()
-                actor_loss += mean_loss + std_loss + z_loss
-
-                q_critic.train(q_loss, q_optimizer)
-                v_critic.train(v_loss, v_optimizer)
-                actor.train(actor_loss, actor_optimizer)
-                    
-                #soft updates
-                for target_param, param in zip(target_v_critic.parameters(), v_critic.parameters()):
-                    target_param.data.copy_(target_param.data * (1.0 - 5*1e-3) + param.data * 5*1e-3)
-
-            global_step += 1
-            state = next_state
-            total_reward += reward
-
-
-           #if global_step % freq == 0 and not evaluation:
-                #reward, _, _ = run_episode(actor, buffer, v_critic, target_v_critic, q_critic, env, gamma, freq, max_steps, global_step, v_optimizer, q_optimizer, actor_optimizer, True)
-                #test_rewards.append(reward)
-
-            if done:
-                break
+        action_dim = self.env.action_space.shape[0]
+        state_dim  = self.env.observation_space.shape[0]
+        hidden_dim = 256
         
-    #train_rewards.append(total_reward)
-
-    return total_reward, global_step
-
-
-
-
-def run_experiment(actor, buffer, v_critic, target_v_critic, q_critic, env, freq, v_optimizer, q_optimizer, actor_optimizer, gamma=0.99, max_steps=500, n_epi=10000):
-    global_step = 0
-    test_rewards = []
-    #test_rewards = [run_episode(actor, buffer, v_critic, target_v_critic, q_critic, env, gamma, freq, max_steps, global_step, v_optimizer, q_optimizer, actor_optimizer, evaluation=True)[0]]
-    train_rewards = []
-    num_steps = [0]
-    for i in trange(n_epi):
-        total_reward, global_step = run_episode(actor, buffer, v_critic, target_v_critic, q_critic, env, gamma, freq, max_steps, global_step, v_optimizer, q_optimizer, actor_optimizer, evaluation=False)
-        train_rewards.append(total_reward)
-        num_steps.append(global_step)
-   #     test_rewards.extend(test_reward)
-   
-    return train_rewards, num_steps
-
-
-def main(arg):
-    train_rewards = []
-    num_steps = []
-    test_rewards = np.zeros(shape=(arg.n_exp, arg.max // arg.freq + 1), dtype=np.float64)
-
-    for i in trange(arg.n_exp):
-        env = NormalizedActions(gym.make(arg.env))
-        env.seed(np.random.randint(12345))
-        a_dim = get_action_dimension(env)            
-        s_dim = get_state_dimension(env)
-
-        buffer = ReplayBuffer(size=arg.buffer, a_dim=a_dim, a_dtype=np.float32, s_dim=s_dim, s_dtype=np.float32, store_mu=False)
-
-        v_critic = VCritic().to(device)
-        target_v_critic = VCritic().to(device)
-
-        softq_critic = SoftQCritic().to(device)
-
-        SAC_actor = SACActor().to(device)
-
-        v_optimizer = optim.Adam(v_critic.parameters(), lr=3e-4) 
-        q_optimizer = optim.Adam(softq_critic.parameters(), lr=3e-4) 
-        actor_optimizer = optim.Adam(SAC_actor.parameters(), lr=3e-4) 
-
-        train_rewards, steps = run_experiment(SAC_actor, buffer, v_critic, target_v_critic, softq_critic, env, arg.freq, v_optimizer, q_optimizer, actor_optimizer, arg.discount, arg.max, arg.n_epi)
-        train_rewards.append(reward)
-        num_steps.append(steps)
-
-
+        self.value_net        = ValueNet(state_dim, hidden_dim).to(device)
+        self.target_value_net = ValueNet(state_dim, hidden_dim).to(device)
+        
+        self.soft_q_net = SoftQNet(state_dim, action_dim, hidden_dim).to(device)
+        self.policy_net = PolicyNet2(state_dim, action_dim, hidden_dim).to(device)
+        
+        for target_param, param in zip(self.target_value_net.parameters(), self.value_net.parameters()):
+            target_param.data.copy_(param.data)
+            
+        
+        self.value_criterion  = nn.MSELoss()
+        self.soft_q_criterion = nn.MSELoss()
+        
+        value_lr  = 3e-4
+        soft_q_lr = 3e-4
+        policy_lr = 3e-4
+        
+        self.value_optimizer  = optim.Adam(self.value_net.parameters(), lr=value_lr)
+        self.soft_q_optimizer = optim.Adam(self.soft_q_net.parameters(), lr=soft_q_lr)
+        self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
+        
+        
+        self.replay_buffer_size = 1000000
+        self.replay_buffer = ReplayBuffer(self.replay_buffer_size)
+        
+        self.max_frames  = 40000
+        self.max_steps   = 500
+        self.frame_idx   = 0
+        self.rewards     = []
+        self.batch_size  = 128
+        
+        self.max_frames  = 40000
+        
+    def train_step(self, 
+           gamma=0.99,
+           mean_lambda=1e-3,
+           std_lambda=1e-3,
+           z_lambda=0.0,
+           soft_tau=1e-2,
+          ):
+        state, action, reward, next_state, done = self.replay_buffer.sample(self.batch_size)
+    
+        state      = torch.FloatTensor(state).to(device)
+        next_state = torch.FloatTensor(next_state).to(device)
+        action     = torch.FloatTensor(action).to(device)
+        reward     = torch.FloatTensor(reward).unsqueeze(1).to(device)
+        done       = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
+    
+        expected_q_value = self.soft_q_net(state, action)
+        expected_value   = self.value_net(state)
+        new_action, log_prob, z, mean, log_std = self.policy_net.evaluate(state)
+    
+    
+        target_value = self.target_value_net(next_state)
+        next_q_value = reward + (1 - done) * gamma * target_value
+        q_value_loss = self.soft_q_criterion(expected_q_value, next_q_value.detach())
+    
+        expected_new_q_value = self.soft_q_net(state, new_action)
+        next_value = expected_new_q_value - log_prob
+        value_loss = self.value_criterion(expected_value, next_value.detach())
+    
+        log_prob_target = expected_new_q_value - expected_value
+        policy_loss = (log_prob * (log_prob - log_prob_target).detach()).mean()
+        
+    
+        mean_loss = mean_lambda * mean.pow(2).mean()
+        std_loss  = std_lambda  * log_std.pow(2).mean()
+        z_loss    = z_lambda    * z.pow(2).sum(1).mean()
+    
+        policy_loss += mean_loss + std_loss + z_loss
+    
+        self.soft_q_optimizer.zero_grad()
+        q_value_loss.backward()
+        self.soft_q_optimizer.step()
+    
+        self.value_optimizer.zero_grad()
+        value_loss.backward()
+        self.value_optimizer.step()
+    
+        self.policy_optimizer.zero_grad()
+        policy_loss.backward()
+        self.policy_optimizer.step()
+        
+        soft_update(self.value_net, self.target_value_net, soft_tau)
+            
+    def predict(self, state):
+        return self.policy_net.get_action(state)
+    
+    def learn(self):
+        while self.frame_idx < self.max_frames:
+            state = self.env.reset()
+            episode_reward = 0
+            
+            for step in range(self.max_steps):
+                action = self.policy_net.get_action(state)
+                next_state, reward, done, _ = self.env.step(action)
+                
+                self.replay_buffer.push(state, action, reward, next_state, done)
+                if len(self.replay_buffer) > self.batch_size:
+                    self.train_step(self.batch_size)
+                
+                state = next_state
+                episode_reward += reward
+                self.frame_idx += 1
+                
+                if self.frame_idx % 1000 == 0:
+                    plot(self.frame_idx, self.rewards)
+                
+                if done:
+                    break
+                
+            self.rewards.append(episode_reward)
+            
 if __name__ == '__main__':
-    from argparse import ArgumentParser
-    argparser = ArgumentParser()
-    argparser.add_argument('-b', '--buffer', type=int, default=1000000, help='Buffer size (default: 1000000).')
-    argparser.add_argument('-d', '--discount', type=float, default=0.99, help='Discount factor, gamma (default: 0.99).')
-    argparser.add_argument('-e', '--env', type=str, default='Pendulum-v0', help='ID of gym environment (default: Pendulum-v0).')
-    argparser.add_argument('-f', '--freq', type=int, default=500, help='An evaluation episode is done at every _freq_ step.')
-    argparser.add_argument('-m', '--max', type=int, default=500, help='Max number of steps (default: 500).')
-    argparser.add_argument('-n', '--n_exp', type=int, default=20, help='Number of experiments (default: 20).')
-    argparser.add_argument('-p', '--n_epi', type=int, default=10000, help='Number of episodes (default: 10000).')
-    arg = argparser.parse_args()
-
-    main(arg)
-
-
+    model = SAC()
+    model.learn()
+        

@@ -1,0 +1,18 @@
+## Changes
+- [x] TD3
+- [x] SAC
+- [ ] AC
+- [ ] ACER
+- [x] DDPG
+- [ ] HER
+- [ ] PG
+- [ ] PPO
+- [ ] TRPO
+- [ ] SQL
+- [ ] GAIL
+- [ ] DQN
+- [ ] DoubleDQN
+- [ ] DuelingDQN
+- [ ] NoisyDQN
+- [ ] RainbowDQN
+- [ ] Categorical

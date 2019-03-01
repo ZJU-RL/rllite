@@ -1,4 +1,4 @@
-import rllite.A2C
+import rllite.AC
 import rllite.ACER
 import rllite.DDPG
 import rllite.GAIL
