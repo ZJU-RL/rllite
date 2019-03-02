@@ -4,15 +4,15 @@
 - [x] A2C
 - [x] ACER
 - [x] DDPG
-- [ ] HER
+- [x] HER
 - [ ] PG
 - [x] PPO
 - [ ] TRPO
 - [ ] SQL
 - [x] GAIL
-- [ ] DQN
-- [ ] DoubleDQN
-- [ ] DuelingDQN
+- [x] DQN
+- [x] DoubleDQN
+- [x] DuelingDQN
 - [ ] NoisyDQN
 - [ ] RainbowDQN
 - [ ] CategoricalDQN
