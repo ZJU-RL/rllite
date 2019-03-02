@@ -13,6 +13,6 @@
 - [x] DQN
 - [x] DoubleDQN
 - [x] DuelingDQN
-- [ ] NoisyDQN
-- [ ] RainbowDQN
+- [x] NoisyDQN
+- [x] RainbowDQN
 - [ ] CategoricalDQN
