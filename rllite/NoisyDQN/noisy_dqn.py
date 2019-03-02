@@ -1,7 +1,7 @@
-import math, random
-
+import math
 import gym
 import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -9,19 +9,8 @@ import torch.optim as optim
 import torch.autograd as autograd
 import torch.nn.functional as F
 
-from utils import PrioritizedReplayBuffer
-
-from IPython.display import clear_output
-import matplotlib.pyplot as plt
-
-USE_CUDA = torch.cuda.is_available()
-
-
-"""
-Cart Pole Environment
-"""
-env_id = "CartPole-v0"
-env = gym.make(env_id)
+from rllite.common import PrioritizedReplayBuffer
+from rllite.common import make_atari, wrap_deepmind, wrap_pytorch
 
 
 class NoisyLinear(nn.Module):
@@ -75,13 +64,16 @@ class NoisyLinear(nn.Module):
         return x
 
 
-class NoisyDQN(nn.Module):
+class TinyNoisyDQN(nn.Module):
     def __init__(self, num_inputs, num_actions):
-        super(NoisyDQN, self).__init__()
+        super(TinyNoisyDQN, self).__init__()
 
-        self.linear = nn.Linear(env.observation_space.shape[0], 128)
+        self.num_input = num_inputs
+        self.num_actions = num_actions
+
+        self.linear = nn.Linear(self.num_input, 128)
         self.noisy1 = NoisyLinear(128, 128)
-        self.noisy2 = NoisyLinear(128, env.action_space.n)
+        self.noisy2 = NoisyLinear(128, self.num_actions)
 
     def forward(self, x):
         x = F.relu(self.linear(x))
@@ -92,8 +84,6 @@ class NoisyDQN(nn.Module):
     def act(self, state):
         state = torch.FloatTensor(state).unsqueeze(0)
         q_value = self.forward(state)
-        print(torch.argmax(q_value, dim=1).item())
-        # action = q_value.max(1)[1].data[0]
         action = torch.argmax(q_value, dim=1).item()
         return action
 
@@ -102,122 +92,99 @@ class NoisyDQN(nn.Module):
         self.noisy2.reset_noise()
 
 
-current_model = NoisyDQN(env.observation_space.shape[0], env.action_space.n)
-target_model = NoisyDQN(env.observation_space.shape[0], env.action_space.n)
+class NoisyDQN(object):
+    def __init__(self, env_id="CartPole-v0"):
+        self.env_id = "CartPole-v0"
+        self.env = gym.make(self.env_id)
+        self.current_model = TinyNoisyDQN(self.env.observation_space.shape[0], self.env.action_space.n)
+        self.target_model = TinyNoisyDQN(self.env.observation_space.shape[0], self.env.action_space.n)
+        if torch.cuda.is_available():
+            self.current_model = self.current_model.cuda()
+            self.target_model = self.target_model.cuda()
 
-if USE_CUDA:
-    current_model = current_model.cuda()
-    target_model = target_model.cuda()
+        self.optimizer = optim.Adam(self.current_model.parameters(), lr=0.0001)
+        self.replay_buffer = PrioritizedReplayBuffer(10000, alpha=0.6)
 
-optimizer = optim.Adam(current_model.parameters(), lr=0.0001)
+        self.update_target(self.current_model, self.target_model)
+        self.losses = []
 
-beta_start = 0.4
-beta_frames = 1000
-beta_by_frame = lambda frame_idx: min(1.0, beta_start + frame_idx * (1.0 - beta_start) / beta_frames)
+    def update_target(self, current_model, target_model):
+        target_model.load_state_dict(current_model.state_dict())
 
-replay_buffer = PrioritizedReplayBuffer(10000, alpha=0.6)
+    def train_step(self, frame_idx, beta_start=0.4, beta_frames=1000, gamma = 0.99, batch_size=32):
+        beta = min(1.0, beta_start + frame_idx * (1.0 - beta_start) / beta_frames)
+        state, action, reward, next_state, done, weights, indices = self.replay_buffer.sample(batch_size, beta)
 
+        state = torch.FloatTensor(np.float32(state))
+        next_state = torch.FloatTensor(np.float32(next_state))
+        action = torch.LongTensor(action)
+        reward = torch.FloatTensor(reward)
+        done = torch.FloatTensor(np.float32(done))
+        weights = torch.FloatTensor(weights)
 
-def update_target(current_model, target_model):
-    target_model.load_state_dict(current_model.state_dict())
+        q_values = self.current_model(state)
+        next_q_values = self.target_model(next_state)
 
+        q_value = q_values.gather(1, action.unsqueeze(1)).squeeze(1)
+        next_q_value = next_q_values.max(1)[0]
+        expected_q_value = reward + gamma * next_q_value * (1 - done)
 
-update_target(current_model, target_model)
+        loss = (q_value - expected_q_value.detach()).pow(2) * weights
+        prios = loss + 1e-5
+        loss = loss.mean()
 
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
-def compute_td_loss(batch_size, beta):
-    state, action, reward, next_state, done, weights, indices = replay_buffer.sample(batch_size, beta)
+        self.replay_buffer.update_priorities(indices, prios.data.cpu().numpy())
+        self.current_model.reset_noise()
+        self.target_model.reset_noise()
 
-    state = torch.FloatTensor(np.float32(state))
-    next_state = torch.FloatTensor(np.float32(next_state))
-    action = torch.LongTensor(action)
-    reward = torch.FloatTensor(reward)
-    done = torch.FloatTensor(np.float32(done))
-    weights = torch.FloatTensor(weights)
+        self.losses.append(loss.item())
 
-    q_values = current_model(state)
-    next_q_values = target_model(next_state)
-
-    q_value = q_values.gather(1, action.unsqueeze(1)).squeeze(1)
-    next_q_value = next_q_values.max(1)[0]
-    expected_q_value = reward + gamma * next_q_value * (1 - done)
-
-    loss = (q_value - expected_q_value.detach()).pow(2) * weights
-    prios = loss + 1e-5
-    loss = loss.mean()
-
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-
-    replay_buffer.update_priorities(indices, prios.data.cpu().numpy())
-    current_model.reset_noise()
-    target_model.reset_noise()
-
-    return loss
-
-def plot(frame_idx, rewards, losses):
-    clear_output(True)
-    plt.figure(figsize=(20,5))
-    plt.subplot(131)
-    plt.title('frame %s. reward: %s' % (frame_idx, np.mean(rewards[-10:])))
-    plt.plot(rewards)
-    plt.subplot(132)
-    plt.title('loss')
-    plt.plot(losses)
-    plt.show()
-
-
-num_frames = 10000
-batch_size = 32
-gamma = 0.99
-
-losses = []
-all_rewards = []
-episode_reward = 0
-
-state = env.reset()
-for frame_idx in range(1, num_frames + 1):
-    action = current_model.act(state)
-
-    next_state, reward, done, _ = env.step(action)
-    replay_buffer.push(state, action, reward, next_state, done)
-
-    state = next_state
-    episode_reward += reward
-
-    if done:
-        state = env.reset()
-        all_rewards.append(episode_reward)
+    def learn(self, num_frames=10000, batch_size=32):
+        all_rewards = []
         episode_reward = 0
 
-    if len(replay_buffer) > batch_size:
-        beta = beta_by_frame(frame_idx)
-        loss = compute_td_loss(batch_size, beta)
-        losses.append(loss.item())
+        state = self.env.reset()
+        for frame_idx in range(1, num_frames + 1):
+            action = self.current_model.act(state)
 
-    # if frame_idx % 200 == 0:
-    if frame_idx == num_frames:
-        plot(frame_idx, all_rewards, losses)
+            next_state, reward, done, _ = self.env.step(action)
+            self.replay_buffer.push(state, action, reward, next_state, done)
 
-    if frame_idx % 1000 == 0:
-        update_target(current_model, target_model)
+            state = next_state
+            episode_reward += reward
+
+            if done:
+                state = self.env.reset()
+                all_rewards.append(episode_reward)
+                episode_reward = 0
+
+            if len(self.replay_buffer) > batch_size:
+                self.train_step(frame_idx)
+
+            # if frame_idx % 200 == 0:
+            if frame_idx == num_frames:
+                plt.figure(figsize=(20, 5))
+                plt.subplot(121)
+                plt.title('frame %s. reward: %s' % (frame_idx, np.mean(all_rewards[-10:])))
+                plt.plot(all_rewards)
+                plt.subplot(122)
+                plt.title('loss')
+                plt.plot(self.losses)
+                plt.show()
+
+            if frame_idx % 1000 == 0:
+                self.update_target(self.current_model, self.target_model)
+
+            print(frame_idx)
 
 
-"""
-PongNoFrameskip Environment
-"""
-from utils import make_atari, wrap_deepmind, wrap_pytorch
-
-env_id = "PongNoFrameskip-v4"
-env = make_atari(env_id)
-env = wrap_deepmind(env)
-env = wrap_pytorch(env)
-
-
-class NoisyCnnDQN(nn.Module):
+class TinyNoisyCnnDQN(nn.Module):
     def __init__(self, input_shape, num_actions):
-        super(NoisyCnnDQN, self).__init__()
+        super(TinyNoisyCnnDQN, self).__init__()
 
         self.input_shape = input_shape
         self.num_actions = num_actions
@@ -232,7 +199,7 @@ class NoisyCnnDQN(nn.Module):
         )
 
         self.noisy1 = NoisyLinear(self.feature_size(), 512)
-        self.noisy2 = NoisyLinear(512, env.action_space.n)
+        self.noisy2 = NoisyLinear(512, self.num_actions)
 
     def forward(self, x):
         batch_size = x.size(0)
@@ -255,59 +222,102 @@ class NoisyCnnDQN(nn.Module):
     def act(self, state):
         state = torch.FloatTensor(np.float32(state)).unsqueeze(0)
         q_value = self.forward(state)
-        print(torch.argmax(q_value, dim=1).item())
-        # action = q_value.max(1)[1].data[0]
         action = torch.argmax(q_value, dim=1).item()
         return action
 
 
-current_model = NoisyCnnDQN(env.observation_space.shape, env.action_space.n)
-target_model = NoisyCnnDQN(env.observation_space.shape, env.action_space.n)
+class NoisyCnnDQN(object):
+    def __init__(self, env_id="PongNoFrameskip-v4", ):
+        self.env_id = env_id
+        self.env = make_atari(self.env_id)
+        self.env = wrap_deepmind(self.env)
+        self.env = wrap_pytorch(self.env)
 
-if USE_CUDA:
-    current_model = current_model.cuda()
-    target_model = target_model.cuda()
+        self.current_model = TinyNoisyCnnDQN(self.env.observation_space.shape, self.env.action_space.n)
+        self.target_model = TinyNoisyCnnDQN(self.env.observation_space.shape, self.env.action_space.n)
+        if torch.cuda.is_available():
+            self.current_model = self.current_model.cuda()
+            self.target_model = self.target_model.cuda()
 
-optimizer = optim.Adam(current_model.parameters(), lr=0.0001)
+        self.optimizer = optim.Adam(self.current_model.parameters(), lr=0.0001)
+        self.replay_buffer = PrioritizedReplayBuffer(10000, alpha=0.6)
+        self.losses = []
 
-beta_start = 0.4
-beta_frames = 100000
-beta_by_frame = lambda frame_idx: min(1.0, beta_start + frame_idx * (1.0 - beta_start) / beta_frames)
+    def update_target(self, current_model, target_model):
+        target_model.load_state_dict(current_model.state_dict())
 
-replay_buffer = PrioritizedReplayBuffer(10000, alpha=0.6)
+    def train_step(self, frame_idx, gamma=0.99, batch_size=32, beta_start=0.4, beta_frames=100000):
+        beta = min(1.0, beta_start + frame_idx * (1.0 - beta_start) / beta_frames)
+        state, action, reward, next_state, done, weights, indices = self.replay_buffer.sample(batch_size, beta)
 
-plt.plot([beta_by_frame(i) for i in range(1000000)])
+        state = torch.FloatTensor(np.float32(state))
+        next_state = torch.FloatTensor(np.float32(next_state))
+        action = torch.LongTensor(action)
+        reward = torch.FloatTensor(reward)
+        done = torch.FloatTensor(np.float32(done))
+        weights = torch.FloatTensor(weights)
 
-num_frames = 1000000
-batch_size = 32
-gamma = 0.99
+        q_values = self.current_model(state)
+        next_q_values = self.target_model(next_state)
 
-losses = []
-all_rewards = []
-episode_reward = 0
+        q_value = q_values.gather(1, action.unsqueeze(1)).squeeze(1)
+        next_q_value = next_q_values.max(1)[0]
+        expected_q_value = reward + gamma * next_q_value * (1 - done)
 
-state = env.reset()
-for frame_idx in range(1, num_frames + 1):
-    action = current_model.act(state)
+        loss = (q_value - expected_q_value.detach()).pow(2) * weights
+        prios = loss + 1e-5
+        loss = loss.mean()
 
-    next_state, reward, done, _ = env.step(action)
-    replay_buffer.push(state, action, reward, next_state, done)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
-    state = next_state
-    episode_reward += reward
+        self.replay_buffer.update_priorities(indices, prios.data.cpu().numpy())
+        self.current_model.reset_noise()
+        self.target_model.reset_noise()
 
-    if done:
-        state = env.reset()
-        all_rewards.append(episode_reward)
+        self.losses.append(loss.item())
+
+    def learn(self, num_frames=1000000, batch_size=32):
+        all_rewards = []
         episode_reward = 0
 
-    if len(replay_buffer) > batch_size:
-        beta = beta_by_frame(frame_idx)
-        loss = compute_td_loss(batch_size, beta)
-        losses.append(loss.item())
+        state = self.env.reset()
+        for frame_idx in range(1, num_frames + 1):
+            action = self.current_model.act(state)
 
-    if frame_idx % 10000 == 0:
-        plot(frame_idx, all_rewards, losses)
+            next_state, reward, done, _ = self.env.step(action)
+            self.replay_buffer.push(state, action, reward, next_state, done)
 
-    if frame_idx % 1000 == 0:
-        update_target(current_model, target_model)
+            state = next_state
+            episode_reward += reward
+
+            if done:
+                state = self.env.reset()
+                all_rewards.append(episode_reward)
+                episode_reward = 0
+
+            if len(self.replay_buffer) > batch_size:
+                self.train_step(frame_idx)
+
+            if frame_idx % 10000 == 0:
+                plt.figure(figsize=(20, 5))
+                plt.subplot(121)
+                plt.title('frame %s. reward: %s' % (frame_idx, np.mean(all_rewards[-10:])))
+                plt.plot(all_rewards)
+                plt.subplot(122)
+                plt.title('loss')
+                plt.plot(self.losses)
+                plt.show()
+
+            if frame_idx % 1000 == 0:
+                self.update_target(self.current_model, self.target_model)
+
+            print(frame_idx)
+
+
+if __name__ == '__main__':
+    model = NoisyDQN()
+    model.learn()
+    model2 = NoisyCnnDQN()
+    model2.learn()
