@@ -215,8 +215,8 @@ class CnnDQN(nn.Module):
 
 
 if __name__ == '__main__':
-    # model1 = DQN()
-    # model1.learn()
-    model2 = CnnDQN()
-    model2.learn()
+    model1 = DQN()
+    model1.learn()
+    # model2 = CnnDQN()
+    # model2.learn()
 
