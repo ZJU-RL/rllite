@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
+from torch.distributions import Categorical
+
+from rllite.common.train import weights_init
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -13,8 +16,9 @@ class QNet(nn.Module):
         self.linear2 = nn.Linear(hidden_size, hidden_size)
         self.linear3 = nn.Linear(hidden_size, 1)
         
-        self.linear3.weight.data.uniform_(-init_w, init_w)
-        self.linear3.bias.data.uniform_(-init_w, init_w)
+        #self.linear3.weight.data.uniform_(-init_w, init_w)
+        #self.linear3.bias.data.uniform_(-init_w, init_w)
+        self.apply(weights_init)
         
     def forward(self, state, action):
         x = torch.cat([state, action], 1)
@@ -31,8 +35,9 @@ class ValueNet(nn.Module):
         self.linear2 = nn.Linear(hidden_dim, hidden_dim)
         self.linear3 = nn.Linear(hidden_dim, 1)
         
-        self.linear3.weight.data.uniform_(-init_w, init_w)
-        self.linear3.bias.data.uniform_(-init_w, init_w)
+        #self.linear3.weight.data.uniform_(-init_w, init_w)
+        #self.linear3.bias.data.uniform_(-init_w, init_w)
+        self.apply(weights_init)
         
     def forward(self, state):
         x = F.relu(self.linear1(state))
@@ -48,39 +53,23 @@ class PolicyNet(nn.Module):
         self.linear2 = nn.Linear(hidden_size, hidden_size)
         self.linear3 = nn.Linear(hidden_size, num_actions)
         
-        self.linear3.weight.data.uniform_(-init_w, init_w)
-        self.linear3.bias.data.uniform_(-init_w, init_w)
+        #self.linear3.weight.data.uniform_(-init_w, init_w)
+        #self.linear3.bias.data.uniform_(-init_w, init_w)
+        self.apply(weights_init)
         
     def forward(self, state):
         x = F.relu(self.linear1(state))
         x = F.relu(self.linear2(x))
-        x = F.tanh(self.linear3(x))
+        x = torch.tanh(self.linear3(x))
         return x
     
     def get_action(self, state):
         state  = torch.FloatTensor(state).unsqueeze(0).to(device)
         action = self.forward(state)
         return action.detach().cpu().numpy()[0]
-
-class SoftQNet(nn.Module):
-    def __init__(self, num_inputs, num_actions, hidden_size, init_w=3e-3):
-        super(SoftQNet, self).__init__()
-        
-        self.linear1 = nn.Linear(num_inputs + num_actions, hidden_size)
-        self.linear2 = nn.Linear(hidden_size, hidden_size)
-        self.linear3 = nn.Linear(hidden_size, 1)
-        
-        self.linear3.weight.data.uniform_(-init_w, init_w)
-        self.linear3.bias.data.uniform_(-init_w, init_w)
-        
-    def forward(self, state, action):
-        x = torch.cat([state, action], 1)
-        x = F.relu(self.linear1(x))
-        x = F.relu(self.linear2(x))
-        x = self.linear3(x)
-        return x
     
 class PolicyNet2(nn.Module):
+    # for SAC
     def __init__(self, num_inputs, num_actions, hidden_size, init_w=3e-3, log_std_min=-20, log_std_max=2):
         super(PolicyNet2, self).__init__()
         
@@ -91,12 +80,13 @@ class PolicyNet2(nn.Module):
         self.linear2 = nn.Linear(hidden_size, hidden_size)
         
         self.mean_linear = nn.Linear(hidden_size, num_actions)
-        self.mean_linear.weight.data.uniform_(-init_w, init_w)
-        self.mean_linear.bias.data.uniform_(-init_w, init_w)
+        #self.mean_linear.weight.data.uniform_(-init_w, init_w)
+        #self.mean_linear.bias.data.uniform_(-init_w, init_w)
         
         self.log_std_linear = nn.Linear(hidden_size, num_actions)
-        self.log_std_linear.weight.data.uniform_(-init_w, init_w)
-        self.log_std_linear.bias.data.uniform_(-init_w, init_w)
+        #self.log_std_linear.weight.data.uniform_(-init_w, init_w)
+        #self.log_std_linear.bias.data.uniform_(-init_w, init_w)
+        self.apply(weights_init)
         
     def forward(self, state):
         x = F.relu(self.linear1(state))
@@ -132,3 +122,99 @@ class PolicyNet2(nn.Module):
         
         action  = action.detach().cpu().numpy()
         return action[0]
+    
+class ActorCritic(nn.Module):
+    # Discrete
+    def __init__(self, num_inputs, num_outputs, hidden_size, std=0.0):
+        super(ActorCritic, self).__init__()
+        
+        self.actor = nn.Sequential(
+            nn.Linear(num_inputs, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, num_outputs),
+            nn.Softmax(dim=1),
+        )
+        
+        self.critic = nn.Sequential(
+            nn.Linear(num_inputs, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, 1)
+        )
+        
+        self.actor.apply(weights_init)
+        self.critic.apply(weights_init)
+        
+    def forward(self, x):
+        value = self.critic(x)
+        probs = self.actor(x)
+        dist  = Categorical(probs)
+        return dist, value
+    
+class ActorCritic2(nn.Module):
+    # for ACER
+    def __init__(self, num_inputs, num_actions, hidden_size=256):
+        super(ActorCritic2, self).__init__()
+        
+        self.actor = nn.Sequential(
+            nn.Linear(num_inputs, hidden_size),
+            nn.Tanh(),
+            nn.Linear(hidden_size, num_actions),
+            nn.Softmax(dim=1)
+        )
+        
+        self.critic = nn.Sequential(
+            nn.Linear(num_inputs, hidden_size),
+            nn.Tanh(),
+            nn.Linear(hidden_size, num_actions)
+        )
+        self.actor.apply(weights_init)
+        self.critic.apply(weights_init)
+        
+    def forward(self, x):
+        policy  = self.actor(x).clamp(max=1-1e-20)
+        q_value = self.critic(x)
+        value   = (policy * q_value).sum(-1, keepdim=True)
+        return policy, q_value, value
+    
+class ActorCritic3(nn.Module):
+    # for PPO
+    def __init__(self, num_inputs, num_outputs, hidden_size, std=0.0):
+        super(ActorCritic3, self).__init__()
+        
+        self.critic = nn.Sequential(
+            nn.Linear(num_inputs, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, 1)
+        )
+        
+        self.actor = nn.Sequential(
+            nn.Linear(num_inputs, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, num_outputs),
+        )
+        self.log_std = nn.Parameter(torch.ones(1, num_outputs) * std)
+        
+        self.apply(weights_init)
+        
+    def forward(self, x):
+        value = self.critic(x)
+        mu    = self.actor(x)
+        std   = self.log_std.exp().expand_as(mu)
+        dist  = Normal(mu, std)
+        return dist, value
+
+class Discriminator(nn.Module):
+    def __init__(self, num_inputs, hidden_size):
+        super(Discriminator, self).__init__()
+        
+        self.linear1   = nn.Linear(num_inputs, hidden_size)
+        self.linear2   = nn.Linear(hidden_size, hidden_size)
+        self.linear3   = nn.Linear(hidden_size, 1)
+
+        self.apply(weights_init)
+    
+    def forward(self, x):
+        x = torch.tanh(self.linear1(x))
+        x = torch.tanh(self.linear2(x))
+        prob = torch.sigmoid(self.linear3(x))
+        return prob

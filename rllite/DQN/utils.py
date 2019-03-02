@@ -1,69 +1,11 @@
-import gym
 import numpy as np
-import torch
 from collections import deque
-
+import gym
+from gym import spaces
 import cv2
+
 cv2.ocl.setUseOpenCL(False)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   
-
-class NormalizedActions(gym.ActionWrapper):
-    def _action(self, action):
-        low  = self.action_space.low
-        high = self.action_space.high
-        
-        action = low + (action + 1.0) * 0.5 * (high - low)
-        action = np.clip(action, low, high)
-        
-        return action
-
-    def _reverse_action(self, action):
-        low  = self.action_space.low
-        high = self.action_space.high
-        
-        action = 2 * (action - low) / (high - low) - 1
-        action = np.clip(action, low, high)
-        
-        return action
-    
-def test_env(env, model, render=False):
-    state = env.reset()
-    done = False
-    total_reward = 0
-    if render: 
-        env.render()
-    while not done:
-        state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        policy, _, _ = model(state)
-        action = policy.multinomial(1)
-        next_state, reward, done, _ = env.step(action.item())
-        state = next_state
-        total_reward += reward
-        if render: 
-            env.render()
-    return total_reward
-
-def test_env2(env, model, vis=False):
-    state = env.reset()
-    if vis: env.render()
-    done = False
-    total_reward = 0
-    while not done:
-        state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        dist, _ = model(state)
-        next_state, reward, done, _ = env.step(dist.sample().cpu().numpy()[0])
-        state = next_state
-        if vis: env.render()
-        total_reward += reward
-    return total_reward
-
-def make_env(env_name):
-    def _thunk():
-        env = gym.make(env_name)
-        return env
-    
-    return _thunk
 
 class NoopResetEnv(gym.Wrapper):
     def __init__(self, env, noop_max=30):
@@ -200,7 +142,7 @@ class WarpFrame(gym.ObservationWrapper):
         gym.ObservationWrapper.__init__(self, env)
         self.width = 84
         self.height = 84
-        self.observation_space = gym.spaces.Box(low=0, high=255,
+        self.observation_space = spaces.Box(low=0, high=255,
                                             shape=(self.height, self.width, 1), dtype=np.uint8)
 
     def observation(self, frame):
@@ -221,7 +163,7 @@ class FrameStack(gym.Wrapper):
         self.k = k
         self.frames = deque([], maxlen=k)
         shp = env.observation_space.shape
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(shp[0], shp[1], shp[2] * k), dtype=np.uint8)
+        self.observation_space = spaces.Box(low=0, high=255, shape=(shp[0], shp[1], shp[2] * k), dtype=np.uint8)
 
     def reset(self):
         ob = self.env.reset()
