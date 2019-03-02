@@ -38,6 +38,20 @@ class ReplayBuffer2(object):
 
     def __len__(self):
         return len(self.buffer)
+
+class ReplayBuffer3(object):
+    def __init__(self, capacity):
+        self.buffer = deque(maxlen=capacity)
+    
+    def push(self, state, action, reward, next_state, done, goal):
+        self.buffer.append((state, action, reward, next_state, done, goal))
+    
+    def sample(self, batch_size):
+        state, action, reward, next_state, done, goal = zip(*random.sample(self.buffer, batch_size))
+        return np.stack(state), action, reward, np.stack(next_state), done, np.stack(goal)
+    
+    def __len__(self):
+        return len(self.buffer)
         
 class EpisodicReplayMemory(object):
     def __init__(self, capacity, max_episode_length):
