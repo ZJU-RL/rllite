@@ -2,6 +2,7 @@ import math, random
 
 import gym
 import numpy as np
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -9,19 +10,10 @@ import torch.optim as optim
 import torch.autograd as autograd
 import torch.nn.functional as F
 
-from utils import ReplayBuffer
-
-from IPython.display import clear_output
-import matplotlib.pyplot as plt
+from rllite.common import ReplayBuffer
+from rllite.common import make_atari, wrap_deepmind, wrap_pytorch
 
 USE_CUDA = torch.cuda.is_available()
-
-
-"""
-CartPole Environment
-"""
-env_id = "CartPole-v0"
-env = gym.make(env_id)
 
 
 class NoisyLinear(nn.Module):
@@ -75,9 +67,9 @@ class NoisyLinear(nn.Module):
         return x
 
 
-class CategoricalDQN(nn.Module):
+class TinyCategoricalDQN(nn.Module):
     def __init__(self, num_inputs, num_actions, num_atoms, Vmin, Vmax):
-        super(CategoricalDQN, self).__init__()
+        super(TinyCategoricalDQN, self).__init__()
 
         self.num_inputs = num_inputs
         self.num_actions = num_actions
@@ -105,152 +97,132 @@ class CategoricalDQN(nn.Module):
     def act(self, state):
         state = torch.FloatTensor(state).unsqueeze(0)
         dist = self.forward(state).data.cpu()
-        dist = dist * torch.linspace(Vmin, Vmax, num_atoms)
+        dist = dist * torch.linspace(self.Vmin, self.Vmax, self.num_atoms)
         action = dist.sum(2).max(1)[1].numpy()[0]
         return action
 
 
-def projection_distribution(next_state, rewards, dones):
-    batch_size = next_state.size(0)
+class CategoricalDQN(object):
+    def __init__(self, env_id="CartPole-v0", num_atoms=51, Vmin=-10, Vmax=10):
+        self.env_id = env_id
+        self.env = gym.make(self.env_id)
+        self.num_atoms = 51
+        self.Vmin = -10
+        self.Vmax = 10
+        self.current_model = TinyCategoricalDQN(self.env.observation_space.shape[0], self.env.action_space.n, num_atoms, Vmin, Vmax)
+        self.target_model = TinyCategoricalDQN(self.env.observation_space.shape[0], self.env.action_space.n, num_atoms, Vmin, Vmax)
+        if USE_CUDA:
+            self.current_model = self.current_model.cuda()
+            self.target_model = self.target_model.cuda()
 
-    delta_z = float(Vmax - Vmin) / (num_atoms - 1)
-    support = torch.linspace(Vmin, Vmax, num_atoms)
+        self.optimizer = optim.Adam(self.current_model.parameters())
+        self.replay_buffer = ReplayBuffer(10000)
 
-    next_dist = target_model(next_state).data.cpu() * support
-    next_action = next_dist.sum(2).max(1)[1]
-    next_action = next_action.unsqueeze(1).unsqueeze(1).expand(next_dist.size(0), 1, next_dist.size(2))
-    next_dist = next_dist.gather(1, next_action).squeeze(1)
+        self.update_target(self.current_model, self.target_model)
 
-    rewards = rewards.unsqueeze(1).expand_as(next_dist)
-    dones = dones.unsqueeze(1).expand_as(next_dist)
-    support = support.unsqueeze(0).expand_as(next_dist)
+        self.losses = []
 
-    Tz = rewards + (1 - dones) * 0.99 * support
-    Tz = Tz.clamp(min=Vmin, max=Vmax)
-    b = (Tz - Vmin) / delta_z
-    l = b.floor().long()
-    u = b.ceil().long()
+    def update_target(self, current_model, target_model):
+        target_model.load_state_dict(current_model.state_dict())
 
-    offset = torch.linspace(0, (batch_size - 1) * num_atoms, batch_size).long() \
-        .unsqueeze(1).expand(batch_size, num_atoms)
+    def projection_distribution(self, next_state, rewards, dones):
+        batch_size = next_state.size(0)
 
-    proj_dist = torch.zeros(next_dist.size())
-    proj_dist.view(-1).index_add_(0, (l + offset).view(-1), (next_dist * (u.float() - b)).view(-1))
-    proj_dist.view(-1).index_add_(0, (u + offset).view(-1), (next_dist * (b - l.float())).view(-1))
+        delta_z = float(self.Vmax - self.Vmin) / (self.num_atoms - 1)
+        support = torch.linspace(self.Vmin, self.Vmax, self.num_atoms)
 
-    return proj_dist
+        next_dist = self.target_model(next_state).data.cpu() * support
+        next_action = next_dist.sum(2).max(1)[1]
+        next_action = next_action.unsqueeze(1).unsqueeze(1).expand(next_dist.size(0), 1, next_dist.size(2))
+        next_dist = next_dist.gather(1, next_action).squeeze(1)
 
+        rewards = rewards.unsqueeze(1).expand_as(next_dist)
+        dones = dones.unsqueeze(1).expand_as(next_dist)
+        support = support.unsqueeze(0).expand_as(next_dist)
 
-num_atoms = 51
-Vmin = -10
-Vmax = 10
+        Tz = rewards + (1 - dones) * 0.99 * support
+        Tz = Tz.clamp(min=self.Vmin, max=self.Vmax)
+        b = (Tz - self.Vmin) / delta_z
+        l = b.floor().long()
+        u = b.ceil().long()
 
-current_model = CategoricalDQN(env.observation_space.shape[0], env.action_space.n, num_atoms, Vmin, Vmax)
-target_model = CategoricalDQN(env.observation_space.shape[0], env.action_space.n, num_atoms, Vmin, Vmax)
+        offset = torch.linspace(0, (batch_size - 1) * self.num_atoms, batch_size).long() \
+            .unsqueeze(1).expand(batch_size, self.num_atoms)
 
-if USE_CUDA:
-    current_model = current_model.cuda()
-    target_model = target_model.cuda()
+        proj_dist = torch.zeros(next_dist.size())
+        proj_dist.view(-1).index_add_(0, (l + offset).view(-1), (next_dist * (u.float() - b)).view(-1))
+        proj_dist.view(-1).index_add_(0, (u + offset).view(-1), (next_dist * (b - l.float())).view(-1))
 
-optimizer = optim.Adam(current_model.parameters())
+        return proj_dist
 
-replay_buffer = ReplayBuffer(10000)
+    def train_step(self, batch_size=32, gamma=0.99):
+        state, action, reward, next_state, done = self.replay_buffer.sample(batch_size)
 
+        state = torch.FloatTensor(np.float32(state))
+        next_state = torch.FloatTensor(np.float32(next_state))
+        action = torch.LongTensor(action)
+        reward = torch.FloatTensor(reward)
+        done = torch.FloatTensor(np.float32(done))
 
-def update_target(current_model, target_model):
-    target_model.load_state_dict(current_model.state_dict())
+        proj_dist = self.projection_distribution(next_state, reward, done)
 
+        dist = self.current_model(state)
+        action = action.unsqueeze(1).unsqueeze(1).expand(batch_size, 1, self.num_atoms)
+        dist = dist.gather(1, action).squeeze(1)
+        dist.data.clamp_(0.01, 0.99)
+        loss = - (proj_dist * dist.log()).sum(1).mean()
 
-update_target(current_model, target_model)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
+        self.current_model.reset_noise()
+        self.target_model.reset_noise()
 
-def compute_td_loss(batch_size):
-    state, action, reward, next_state, done = replay_buffer.sample(batch_size)
+        self.losses.append(loss.item())
 
-    state = torch.FloatTensor(np.float32(state))
-    next_state = torch.FloatTensor(np.float32(next_state))
-    action = torch.LongTensor(action)
-    reward = torch.FloatTensor(reward)
-    done = torch.FloatTensor(np.float32(done))
-
-    proj_dist = projection_distribution(next_state, reward, done)
-
-    dist = current_model(state)
-    action = action.unsqueeze(1).unsqueeze(1).expand(batch_size, 1, num_atoms)
-    dist = dist.gather(1, action).squeeze(1)
-    dist.data.clamp_(0.01, 0.99)
-    loss = - (proj_dist * dist.log()).sum(1).mean()
-
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-
-    current_model.reset_noise()
-    target_model.reset_noise()
-
-    return loss
-
-def plot(frame_idx, rewards, losses):
-    clear_output(True)
-    plt.figure(figsize=(20,5))
-    plt.subplot(131)
-    plt.title('frame %s. reward: %s' % (frame_idx, np.mean(rewards[-10:])))
-    plt.plot(rewards)
-    plt.subplot(132)
-    plt.title('loss')
-    plt.plot(losses)
-    plt.show()
-
-
-num_frames = 10000
-batch_size = 32
-gamma = 0.99
-
-losses = []
-all_rewards = []
-episode_reward = 0
-
-state = env.reset()
-for frame_idx in range(1, num_frames + 1):
-    action = current_model.act(state)
-
-    next_state, reward, done, _ = env.step(action)
-    replay_buffer.push(state, action, reward, next_state, done)
-
-    state = next_state
-    episode_reward += reward
-
-    if done:
-        state = env.reset()
-        all_rewards.append(episode_reward)
+    def learn(self, num_frames=10000, batch_size=32):
+        all_rewards = []
         episode_reward = 0
 
-    if len(replay_buffer) > batch_size:
-        loss = compute_td_loss(batch_size)
-        losses.append(loss.item())
+        state = self.env.reset()
+        for frame_idx in range(1, num_frames + 1):
+            action = self.current_model.act(state)
 
-    # if frame_idx % 200 == 0:
-    if frame_idx == num_frames:
-        plot(frame_idx, all_rewards, losses)
+            next_state, reward, done, _ = self.env.step(action)
+            self.replay_buffer.push(state, action, reward, next_state, done)
 
-    if frame_idx % 100 == 0:
-        update_target(current_model, target_model)
+            state = next_state
+            episode_reward += reward
+
+            if done:
+                state = self.env.reset()
+                all_rewards.append(episode_reward)
+                episode_reward = 0
+
+            if len(self.replay_buffer) > batch_size:
+                self.train_step()
+
+            # if frame_idx % 200 == 0:
+            if frame_idx == num_frames:
+                plt.figure(figsize=(20, 5))
+                plt.subplot(121)
+                plt.title('frame %s. reward: %s' % (frame_idx, np.mean(all_rewards[-10:])))
+                plt.plot(all_rewards)
+                plt.subplot(122)
+                plt.title('loss')
+                plt.plot(self.losses)
+                plt.show()
+
+            if frame_idx % 100 == 0:
+                self.update_target(self.current_model, self.target_model)
+
+            print(frame_idx)
 
 
-"""
-PongNoFrameskip Environment
-"""
-from utils import make_atari, wrap_deepmind, wrap_pytorch
-
-env_id = "PongNoFrameskip-v4"
-env = make_atari(env_id)
-env = wrap_deepmind(env)
-env = wrap_pytorch(env)
-
-
-class CategoricalCnnDQN(nn.Module):
+class TinyCategoricalCnnDQN(nn.Module):
     def __init__(self, input_shape, num_actions, num_atoms, Vmin, Vmax):
-        super(CategoricalCnnDQN, self).__init__()
+        super(TinyCategoricalCnnDQN, self).__init__()
 
         self.input_shape = input_shape
         self.num_actions = num_actions
@@ -292,58 +264,133 @@ class CategoricalCnnDQN(nn.Module):
     def act(self, state):
         state = torch.FloatTensor(np.float32(state)).unsqueeze(0)
         dist = self.forward(state).data.cpu()
-        dist = dist * torch.linspace(Vmin, Vmax, num_atoms)
+        dist = dist * torch.linspace(self.Vmin, self.Vmax, self.num_atoms)
         action = dist.sum(2).max(1)[1].numpy()[0]
         return action
 
 
-num_atoms = 51
-Vmin = -10
-Vmax = 10
+class CategoricalCnnDQN(object):
+    def __init__(self, env_id="PongNoFrameskip-v4", num_atoms=51, Vmin=-10, Vmax=10):
+        self.num_atoms = num_atoms
+        self.Vmin = Vmin
+        self.Vmax = Vmax
+        self.env_id = env_id
+        self.env = make_atari(self.env_id)
+        self.env = wrap_deepmind(self.env)
+        self.env = wrap_pytorch(self.env)
 
-current_model = CategoricalCnnDQN(env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
-target_model = CategoricalCnnDQN(env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
+        self.current_model = TinyCategoricalCnnDQN(self.env.observation_space.shape, self.env.action_space.n, self.num_atoms, self.Vmin, self.Vmax)
+        self.target_model = TinyCategoricalCnnDQN(self.env.observation_space.shape, self.env.action_space.n, self.num_atoms, self.Vmin, self.Vmax)
 
-if USE_CUDA:
-    current_model = current_model.cuda()
-    target_model = target_model.cuda()
+        if USE_CUDA:
+            self.current_model = self.current_model.cuda()
+            self.target_model = self.target_model.cuda()
 
-optimizer = optim.Adam(current_model.parameters(), 0.0001)
-update_target(current_model, target_model)
+        self.optimizer = optim.Adam(self.current_model.parameters(), 0.0001)
+        self.update_target(self.current_model, self.target_model)
 
-replay_initial = 10000
-replay_buffer = ReplayBuffer(100000)
+        self.replay_buffer = ReplayBuffer(100000)
+        self.losses = []
 
-num_frames = 1000000
-batch_size = 32
-gamma = 0.99
+    def update_target(self, current_model, target_model):
+        target_model.load_state_dict(current_model.state_dict())
 
-losses = []
-all_rewards = []
-episode_reward = 0
+    def projection_distribution(self, next_state, rewards, dones):
+        batch_size = next_state.size(0)
 
-state = env.reset()
-for frame_idx in range(1, num_frames + 1):
-    action = current_model.act(state)
+        delta_z = float(self.Vmax - self.Vmin) / (self.num_atoms - 1)
+        support = torch.linspace(self.Vmin, self.Vmax, self.num_atoms)
 
-    next_state, reward, done, _ = env.step(action)
-    replay_buffer.push(state, action, reward, next_state, done)
+        next_dist = self.target_model(next_state).data.cpu() * support
+        next_action = next_dist.sum(2).max(1)[1]
+        next_action = next_action.unsqueeze(1).unsqueeze(1).expand(next_dist.size(0), 1, next_dist.size(2))
+        next_dist = next_dist.gather(1, next_action).squeeze(1)
 
-    state = next_state
-    episode_reward += reward
+        rewards = rewards.unsqueeze(1).expand_as(next_dist)
+        dones = dones.unsqueeze(1).expand_as(next_dist)
+        support = support.unsqueeze(0).expand_as(next_dist)
 
-    if done:
-        state = env.reset()
-        all_rewards.append(episode_reward)
+        Tz = rewards + (1 - dones) * 0.99 * support
+        Tz = Tz.clamp(min=self.Vmin, max=self.Vmax)
+        b = (Tz - self.Vmin) / delta_z
+        l = b.floor().long()
+        u = b.ceil().long()
+
+        offset = torch.linspace(0, (batch_size - 1) * self.num_atoms, batch_size).long() \
+            .unsqueeze(1).expand(batch_size, self.num_atoms)
+
+        proj_dist = torch.zeros(next_dist.size())
+        proj_dist.view(-1).index_add_(0, (l + offset).view(-1), (next_dist * (u.float() - b)).view(-1))
+        proj_dist.view(-1).index_add_(0, (u + offset).view(-1), (next_dist * (b - l.float())).view(-1))
+
+        return proj_dist
+
+    def train_step(self, batch_size=32, gamma=0.99):
+        state, action, reward, next_state, done = self.replay_buffer.sample(batch_size)
+
+        state = torch.FloatTensor(np.float32(state))
+        next_state = torch.FloatTensor(np.float32(next_state))
+        action = torch.LongTensor(action)
+        reward = torch.FloatTensor(reward)
+        done = torch.FloatTensor(np.float32(done))
+
+        proj_dist = self.projection_distribution(next_state, reward, done)
+
+        dist = self.current_model(state)
+        action = action.unsqueeze(1).unsqueeze(1).expand(batch_size, 1, self.num_atoms)
+        dist = dist.gather(1, action).squeeze(1)
+        dist.data.clamp_(0.01, 0.99)
+        loss = - (proj_dist * dist.log()).sum(1).mean()
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        self.current_model.reset_noise()
+        self.target_model.reset_noise()
+
+        self.losses.append(loss.item())
+
+    def learn(self, num_frames=1000000, replay_initial=10000, batch_size=32):
+        all_rewards = []
         episode_reward = 0
 
-    if len(replay_buffer) > replay_initial:
-        loss = compute_td_loss(batch_size)
-        losses.append(loss.item())
+        state = self.env.reset()
+        for frame_idx in range(1, num_frames + 1):
+            action = self.current_model.act(state)
 
-    if frame_idx % 10000 == 0:
-        plot(frame_idx, all_rewards, losses)
+            next_state, reward, done, _ = self.env.step(action)
+            self.replay_buffer.push(state, action, reward, next_state, done)
 
-    if frame_idx % 1000 == 0:
-        update_target(current_model, target_model)
+            state = next_state
+            episode_reward += reward
 
+            if done:
+                state = self.env.reset()
+                all_rewards.append(episode_reward)
+                episode_reward = 0
+
+            if len(self.replay_buffer) > replay_initial:
+                self.train_step()
+
+            if frame_idx % 10000 == 0:
+                plt.figure(figsize=(20, 5))
+                plt.subplot(121)
+                plt.title('frame %s. reward: %s' % (frame_idx, np.mean(all_rewards[-10:])))
+                plt.plot(all_rewards)
+                plt.subplot(122)
+                plt.title('loss')
+                plt.plot(self.losses)
+                plt.show()
+
+            if frame_idx % 1000 == 0:
+                self.update_target(self.current_model, self.target_model)
+
+            print(frame_idx)
+
+
+if __name__ == '__main__':
+    model = CategoricalDQN()
+    model.learn()
+    model2 = CategoricalCnnDQN()
+    model2.learn()
