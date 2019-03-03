@@ -17,5 +17,5 @@
 - [x] RainbowDQN
 - [x] CategoricalDQN
 - [x] HierarchicalDQN
-- [ ] PrioritizedDQN
+- [x] PrioritizedDQN
 - [ ] QuantileRegressionDQN
