@@ -18,4 +18,4 @@
 - [x] CategoricalDQN
 - [x] HierarchicalDQN
 - [x] PrioritizedDQN
-- [ ] QuantileRegressionDQN
+- [x] QuantileRegressionDQN
