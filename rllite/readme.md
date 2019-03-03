@@ -15,4 +15,7 @@
 - [x] DuelingDQN
 - [x] NoisyDQN
 - [x] RainbowDQN
-- [ ] CategoricalDQN
+- [x] CategoricalDQN
+- [x] HierarchicalDQN
+- [ ] PrioritizedDQN
+- [ ] QuantileRegressionDQN
