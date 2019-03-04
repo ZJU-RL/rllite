@@ -320,3 +320,41 @@ class ImageToPyTorch(gym.ObservationWrapper):
 
 def wrap_pytorch(env):
     return ImageToPyTorch(env)
+
+class GymDelay(gym.Wrapper):
+    def __init__(self, env, act_delay=0, obs_delay=0):
+        """
+        Create a delay system, with act_delay steps action delay,
+        and obs_delay steps observation delay.
+        The 'step' function's argument(action) should be a list.
+        This wrapper just supports continuous action and state for now.
+        """
+        gym.Wrapper.__init__(self, env)
+        self.act_delay = act_delay
+        self.obs_delay = obs_delay
+
+        self.act_dim = self.action_space.shape[0]
+        self.obs_dim = self.observation_space.shape[0]
+
+        self.act_buffer = [ [0]*self.act_dim ]*self.act_delay
+        self.obs_buffer = [ [ [0]*self.obs_dim, 0, False, None ] ]*self.obs_delay
+
+        self.reset()
+
+    def reset(self, **kwargs):
+            self.act_buffer = [ [0]*self.act_dim ]*self.act_delay
+            self.obs_buffer = [ [ [0]*self.obs_dim, 0, False, {} ] ]*self.obs_delay
+            self.env.reset(**kwargs)
+
+    def step(self, action):
+        self.act_buffer.append(action)
+        old_action = self.act_buffer.pop(0)
+        new_obs, reward, done, info =  self.env.step(old_action)
+        self.obs_buffer.append([new_obs, reward, done, info])
+        return self.obs_buffer.pop(0)
+    
+    def close(self, **kwargs):
+        self.env.close(**kwargs)
+
+    def render(self, **kwargs):
+        self.env.render(**kwargs)
