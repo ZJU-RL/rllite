@@ -1,1 +1,1 @@
-from .hierarchical_dqn import *
+from .HierarchicalDQN import *

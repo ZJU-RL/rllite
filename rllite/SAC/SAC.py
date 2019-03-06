@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 import os
 import gym
 import numpy as np
@@ -12,7 +11,6 @@ from rllite.common.policy import ValueNet,QNet,PolicyNet2
 from rllite.common import ReplayBuffer,NormalizedActions,soft_update
 
 from tensorboardX import SummaryWriter
-writer = SummaryWriter(log_dir="log")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")     
 
@@ -25,11 +23,8 @@ class SAC():
             buffer_size = 1e6,
             seed = 1,
             max_episode_steps = None,
-            expl_noise = 0.1,
             batch_size = 64,
             discount = 0.99,
-            train_freq = 100,
-            policy_freq = 20,
             learning_starts = 500,
             tau = 0.005,
             save_eps_num = 100
@@ -40,17 +35,15 @@ class SAC():
         self.seed = seed
         self.max_episode_steps = max_episode_steps
         self.buffer_size = buffer_size
-        self.expl_noise = expl_noise
         self.batch_size = batch_size
         self.discount = discount
-        self.train_freq = train_freq
-        self.policy_freq = policy_freq
         self.learning_starts = learning_starts
         self.tau = tau
         self.save_eps_num = save_eps_num
         
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
+        self.writer = SummaryWriter(log_dir=self.log_dir)
 
         env = gym.make(self.env_name)
         if self.max_episode_steps != None:
@@ -69,7 +62,6 @@ class SAC():
         self.soft_q_net = QNet(state_dim, action_dim, hidden_dim).to(device)
         self.policy_net = PolicyNet2(state_dim, action_dim, hidden_dim).to(device)
         
-        self.save(directory=self.load_dir, filename=self.env_name)
         try:
             self.load(directory=self.load_dir, filename=self.env_name)
             print('Load model successfully !')
@@ -91,13 +83,14 @@ class SAC():
         
         self.replay_buffer = ReplayBuffer(self.buffer_size)
 
-        self.frame_idx   = 0
+        self.total_steps = 0
         self.episode_num = 0
-        self.batch_size  = self.batch_size
+        self.episode_timesteps = 0
         
     def save(self, directory, filename):
         if not os.path.exists(directory):
             os.makedirs(directory)
+            
         torch.save(self.value_net.state_dict(), '%s/%s_value_net.pkl' % (directory, filename))
         torch.save(self.soft_q_net.state_dict(), '%s/%s_soft_q_net.pkl' % (directory, filename))
         torch.save(self.policy_net.state_dict(), '%s/%s_policy_net.pkl' % (directory, filename))
@@ -158,9 +151,10 @@ class SAC():
     def predict(self, state):
         return self.policy_net.get_action(state)
     
-    def learn(self, max_frames=1e7):
-        while self.frame_idx < max_frames:
+    def learn(self, max_steps=1e7):
+        while self.total_steps < max_steps:
             state = self.env.reset()
+            self.episode_timesteps = 0
             episode_reward = 0
             
             for step in range(self.max_episode_steps):
@@ -171,13 +165,19 @@ class SAC():
 
                 state = next_state
                 episode_reward += reward
-                self.frame_idx += 1
+                self.total_steps += 1
+                self.episode_timesteps += 1
                 
                 if done:
-                    self.episode_num += 1
-                    writer.add_scalar('episode_reward', episode_reward, self.episode_num)
                     if len(self.replay_buffer) > self.learning_starts:
-                        self.train_step()
+                        for _ in range(self.episode_timesteps):
+                            self.train_step()
+                        
+                    self.episode_num += 1
+                    if self.episode_num > 0 and self.episode_num % self.save_eps_num == 0:
+                        self.save(directory=self.load_dir, filename=self.env_name)
+                        
+                    self.writer.add_scalar('episode_reward', episode_reward, self.episode_num)    
                     break
             
 if __name__ == '__main__':

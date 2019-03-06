@@ -1,1 +1,1 @@
-from .dueling_dqn import *
+from .DuelingDQN import *

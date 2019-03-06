@@ -58,7 +58,7 @@ class TinyQRDQN(nn.Module):
         return action
 
 
-class QRDQN(object):
+class QuantileRegressionDQN(object):
     def __init__(self, env_id="CartPole-v0", num_quant=51, Vmin=-10, Vmax=10, batch_size=32):
         self.env_id = env_id
         self.env = gym.make(self.env_id)
@@ -171,5 +171,5 @@ class QRDQN(object):
 
 
 if __name__ == '__main__':
-    model = QRDQN()
+    model = QuantileRegressionDQN()
     model.learn()

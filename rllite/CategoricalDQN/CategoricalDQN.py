@@ -269,7 +269,7 @@ class TinyCategoricalCnnDQN(nn.Module):
         return action
 
 
-class CategoricalCnnDQN(object):
+class CategoricalDQN(object):
     def __init__(self, env_id="PongNoFrameskip-v4", num_atoms=51, Vmin=-10, Vmax=10):
         self.num_atoms = num_atoms
         self.Vmin = Vmin

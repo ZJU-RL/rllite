@@ -1,1 +1,1 @@
-from .prioritized_dqn import *
+from .PrioritizedDQN import *

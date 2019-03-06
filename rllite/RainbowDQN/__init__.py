@@ -1,1 +1,1 @@
-from .rainbow_dqn import *
+from .RainbowDQN import *

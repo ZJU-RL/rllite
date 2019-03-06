@@ -5,7 +5,7 @@ import operator
 
 class ReplayBuffer:
     def __init__(self, capacity):
-        self.capacity = capacity
+        self.capacity = int(capacity)
         self.buffer = []
         self.position = 0
     
@@ -25,7 +25,7 @@ class ReplayBuffer:
     
 class ReplayBuffer2(object):
     def __init__(self, capacity):
-        self.buffer = deque(maxlen=capacity)
+        self.buffer = deque(maxlen=int(capacity))
 
     def push(self, state, action, reward, next_state, done):
         state = np.expand_dims(state, 0)
@@ -50,7 +50,7 @@ class ReplayBuffer3(object):
             overflows the old memories are dropped.
         """
         self._storage = []
-        self._maxsize = size
+        self._maxsize = int(size)
         self._next_idx = 0
 
     def __len__(self):

@@ -1,1 +1,1 @@
-from .categorical_dqn import *
+from .CategoricalDQN import *

@@ -7,7 +7,7 @@ from collections import deque
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   
 
 class NormalizedActions(gym.ActionWrapper):
-    def _action(self, action):
+    def action(self, action):
         low  = self.action_space.low
         high = self.action_space.high
         
@@ -16,7 +16,7 @@ class NormalizedActions(gym.ActionWrapper):
         
         return action
 
-    def _reverse_action(self, action):
+    def reverse_action(self, action):
         low  = self.action_space.low
         high = self.action_space.high
         
@@ -158,9 +158,6 @@ class MaxAndSkipEnv(gym.Wrapper):
         # most recent raw observations (for max pooling across time steps)
         self._obs_buffer = np.zeros((2,) + env.observation_space.shape, dtype=np.uint8)
         self._skip = skip
-
-    def reset(self):
-        return self.env.reset()
 
     def step(self, action):
         """Repeat action, sum reward, and max over last observations."""

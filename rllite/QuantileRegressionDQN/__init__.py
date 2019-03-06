@@ -1,1 +1,1 @@
-from .quantile_regression_dqn import *
+from .QuantileRegressionDQN import *

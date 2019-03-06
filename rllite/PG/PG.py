@@ -90,5 +90,3 @@ def learn_loop():
                 break
         if epoch % 5 == 0:
             print("epoch %d, steps %d" % (epoch, steps))
-
-learn_loop()

@@ -1,1 +1,1 @@
-from .noisy_dqn import *
+from .NoisyDQN import *
