@@ -7,7 +7,7 @@
 - [x] HER
 - [ ] PG
 - [x] PPO
-- [ ] TRPO
+- [x] TRPO
 - [ ] SQL
 - [x] GAIL
 - [x] DQN

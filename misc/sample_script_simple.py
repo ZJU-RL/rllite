@@ -1,3 +1,3 @@
 from rllite import SAC
 
-model = SAC('mlp','Pendulum-v0').learn(1e7)
+model = SAC('Pendulum-v0').learn(1e7)

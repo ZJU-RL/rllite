@@ -6,9 +6,9 @@ env = gym.make('Pendulum-v0')
 
 # set
 model = SAC(
-	policy = 'mlp',
 	env = env,
 	load = 'ckpt/sac.pkl',
+	log_dir = "./log",
 	seed = 1,
 	buffer_size = 1e6,
 	expl_noise = 0.1,
@@ -18,9 +18,7 @@ model = SAC(
 	policy_freq = 20,
 	learning_starts = 500,
 	tau = 0.005,
-	save_eps_num = 100,
-	verbose = True,
-	log_dir = "./log"
+	save_eps_num = 100
 	)
 
 timesteps = 0
