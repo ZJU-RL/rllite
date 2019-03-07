@@ -1,5 +1,11 @@
 import torch
 
+def choose_gpu(gpu_id):
+    try:
+        torch.cuda.set_device(gpu_id)
+    except:
+        print("ERROR: Cannot choose GPU:", gpu_id, ", using default setting !")
+
 def soft_update(net, target_net, soft_tau=1e-2):
     for target_param, param in zip(target_net.parameters(), net.parameters()):
             target_param.data.copy_(

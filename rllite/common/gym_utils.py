@@ -341,7 +341,7 @@ class GymDelay(gym.Wrapper):
     def reset(self, **kwargs):
             self.act_buffer = [ [0]*self.act_dim ]*self.act_delay
             self.obs_buffer = [ [ [0]*self.obs_dim, 0, False, {} ] ]*self.obs_delay
-            self.env.reset(**kwargs)
+            return self.env.reset(**kwargs)
 
     def step(self, action):
         self.act_buffer.append(action)
@@ -349,9 +349,3 @@ class GymDelay(gym.Wrapper):
         new_obs, reward, done, info =  self.env.step(old_action)
         self.obs_buffer.append([new_obs, reward, done, info])
         return self.obs_buffer.pop(0)
-    
-    def close(self, **kwargs):
-        self.env.close(**kwargs)
-
-    def render(self, **kwargs):
-        self.env.render(**kwargs)

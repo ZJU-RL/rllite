@@ -55,24 +55,35 @@ model.env.close()
 ```
 ### Complex
 ```python
+import gym
 from rllite import SAC
+from rllite.common import choose_gpu, GymDelay
+# choose your GPU if you have more than one
+choose_gpu(0)
+
+# your own gym environment
+env = gym.make("Pendulum-v0")
+env = GymDelay(env, 2, 2)
+    
 # set
 model = SAC(
-    env_name = 'Pendulum-v0',
+    external_env=env, # import your env
     load_dir = './ckpt',
     log_dir = "./log",
     buffer_size = 1e6,
     seed = 1,
-    max_episode_steps = None,
+    max_episode_steps = 500, # manual set
     batch_size = 64,
     discount = 0.99,
-    learning_starts = 500,
+    learning_starts = 1000,
     tau = 0.005,
     save_eps_num = 100
 	)
+
 timesteps = 0
-total_timesteps = 1e2
+total_timesteps = 1e3
 max_eps_steps = 500
+
 # train
 while timesteps < total_timesteps:
     done = False
@@ -85,8 +96,9 @@ while timesteps < total_timesteps:
         obs = new_obs
         eps_steps += 1
         timesteps += 1
-        if timesteps > model.learning_starts and timesteps % model.train_freq == 0:
+        if timesteps > model.learning_starts :
             model.train_step()
+            
 # eval
 for _ in range(10):
     done = False

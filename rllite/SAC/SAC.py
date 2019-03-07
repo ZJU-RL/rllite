@@ -27,7 +27,8 @@ class SAC():
             discount = 0.99,
             learning_starts = 500,
             tau = 0.005,
-            save_eps_num = 100
+            save_eps_num = 100,
+            external_env = None
             ):
         self.env_name = env_name
         self.load_dir = load_dir
@@ -45,7 +46,10 @@ class SAC():
         np.random.seed(self.seed)
         self.writer = SummaryWriter(log_dir=self.log_dir)
 
-        env = gym.make(self.env_name)
+        if external_env == None:
+            env = gym.make(self.env_name)
+        else:
+            env = external_env
         if self.max_episode_steps != None:
             env._max_episode_steps = self.max_episode_steps
         else:
@@ -179,6 +183,7 @@ class SAC():
                         
                     self.writer.add_scalar('episode_reward', episode_reward, self.episode_num)    
                     break
+        self.env.close()
             
 if __name__ == '__main__':
     model = SAC()
