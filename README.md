@@ -110,3 +110,19 @@ for _ in range(10):
         model.env.render()
 model.env.close()
 ```
+
+## Citing
+
+If you use `rllite` in your research, you can cite it as follows:
+```bibtex
+@misc{wang2019rllite,
+    author = {Yunkai Wang and
+    		  Haodong Zhang},
+    title = {rllite},
+    year = {2019},
+    publisher = {GitHub},
+    journal = {GitHub repository},
+    howpublished = {\url{https://github.com/ZJU-RL/rllite}},
+}
+```
+
