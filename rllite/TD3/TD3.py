@@ -184,7 +184,7 @@ class TD3():
                 self.total_steps += 1
                 self.episode_timesteps += 1
                 
-                if done:
+                if done or self.episode_timesteps == self.max_episode_steps:
                     if len(self.replay_buffer) > self.learning_starts:
                         for i in range(self.episode_timesteps):
                             self.train_step(i)

@@ -67,7 +67,8 @@ env = GymDelay(env, 2, 2)
     
 # set
 model = SAC(
-    external_env=env, # import your env
+    external_env = env, # import your env
+    env_name = "my_env", # your env name
     load_dir = './ckpt',
     log_dir = "./log",
     buffer_size = 1e6,
@@ -81,7 +82,7 @@ model = SAC(
 	)
 
 timesteps = 0
-total_timesteps = 1e3
+total_timesteps = 1e6
 max_eps_steps = 500
 
 # train
