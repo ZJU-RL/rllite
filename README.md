@@ -15,7 +15,7 @@ pip install rllite
 ```bash
 git clone https://github.com/ZJU-RL/rllite.git
 cd rllite
-pip install -e .
+python setup.py install
 ```
 
 ## How to use
