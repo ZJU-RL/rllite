@@ -117,7 +117,7 @@ If you use `rllite` in your research, you can cite it as follows:
 ```bibtex
 @misc{wang2019rllite,
     author = {Yunkai Wang and
-    		  Haodong Zhang},
+    	      Haodong Zhang},
     title = {rllite},
     year = {2019},
     publisher = {GitHub},
