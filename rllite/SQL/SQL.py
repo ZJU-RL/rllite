@@ -9,11 +9,12 @@ import torch.nn as nn
 import torch.optim as optim
 
 from rllite.common.policy import QNet,PolicyNet
-from rllite.common import ReplayBuffer,NormalizedActions,soft_update
+from rllite.common import ReplayBuffer,NormalizedActions
 
 from tensorboardX import SummaryWriter
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")     
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")    
+device = torch.device("cpu")
 
 
 class SQL():
@@ -57,11 +58,11 @@ class SQL():
         else:
             self.max_episode_steps = env._max_episode_steps
         self.env = NormalizedActions(env)
-
+        #self.env = env
         action_dim = self.env.action_space.shape[0]
         state_dim  = self.env.observation_space.shape[0]
         hidden_dim = 256
-                
+        print(state_dim, action_dim)
         self.q_net = QNet(state_dim, action_dim, hidden_dim).to(device)
         self.policy_net = PolicyNet(state_dim, action_dim, hidden_dim).to(device)
         
@@ -105,8 +106,13 @@ class SQL():
         self.policy_net.load_state_dict(torch.load('%s/%s_policy_net.pkl' % (directory, filename)))
     
     def forward_QNet(self, obs, action):
-        inputs = torch.FloatTensor([obs + action])
-        q_pred = self.q_net(inputs)
+        #inputs = torch.FloatTensor([obs + action])
+        #inputs = torch.cat((torch.FloatTensor(obs), torch.FloatTensor(action))
+        obs = torch.FloatTensor(obs).to(device)
+        action = torch.FloatTensor(action).to(device)
+        print('obs:',obs)
+        print('action',action)
+        q_pred = self.q_net(obs, action)
         return q_pred
 
     def forward_PolicyNet(self, obs, noise):
@@ -123,23 +129,37 @@ class SQL():
         return [x * mult_val for x in diff]
     
     def train_step(self):
-        i = random.randint(0, len(self.replay_buffer.buffer)-1)
-        current_state = self.replay_buffer.buffer[i][0]
-        current_action = self.replay_buffer.buffer[i][1]
-        current_reward = self.replay_buffer.buffer[i][2]
-        next_state = self.replay_buffer.buffer[i][3]
+        #i = random.randint(0, len(self.replay_buffer.buffer)-1)
+        #current_state = self.replay_buffer.buffer[i][0]
+        #current_action = self.replay_buffer.buffer[i][1]
+        #current_reward = self.replay_buffer.buffer[i][2]
+        #next_state = self.replay_buffer.buffer[i][3]
+        
+        state, action, reward, next_state, done = self.replay_buffer.sample(self.batch_size)
+        current_state      = torch.FloatTensor(state).to(device)
+        next_state = torch.FloatTensor(next_state).to(device)
+        current_action     = torch.FloatTensor(action).to(device)
+        current_reward     = torch.FloatTensor(reward).unsqueeze(1).to(device)
+        #done       = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
 
         # Perform updates on the Q-Network
         best_q_val_next = 0
         for j in range(32):
             # Sample 32 actions and use them in the next state to get an estimate of the state value
-            action_temp = self.action_set[j]
-            q_value_temp = (1.0/self.value_alpha) * self.forward_QNet(next_state, action_temp).data.numpy()[0][0]
+            action_temp = [self.action_set[j][1]]*self.batch_size
+            q_value_temp = self.forward_QNet(next_state, action_temp).data.numpy()[0][0]
+            #print(q_value_temp)
+            q_value_temp = (1.0/self.value_alpha) * q_value_temp
             q_value_temp = np.exp(q_value_temp) / (1.0/32)
             best_q_val_next += q_value_temp * (1.0/32)
         best_q_val_next = self.value_alpha * np.log(best_q_val_next)
-        inputs_cur = torch.FloatTensor([(current_state + current_action)])
-        predicted_q = self.q_net(inputs_cur)
+        #inputs_cur = torch.FloatTensor([(current_state + current_action)])
+        #predicted_q = self.q_net(inputs_cur)
+        current_state = torch.FloatTensor(current_state)
+        current_action = torch.FloatTensor(current_action)
+        print(current_state, current_action)
+        predicted_q = self.q_net(current_state, current_action)
+        
         expected_q = current_reward + 0.99 * best_q_val_next
         expected_q = (1-self.alpha) * predicted_q.data.numpy()[0][0] + self.alpha * expected_q
         expected_q = torch.FloatTensor([[expected_q]])
@@ -192,7 +212,9 @@ class SQL():
             
             for step in range(self.max_episode_steps):
                 #action = self.policy_net.get_action(state)
-                action = tuple(self.forward_PolicyNet(state, (np.random.normal(0.0, 0.5), np.random.normal(0.0, 0.5), np.random.normal(0.0, 0.5))).data.numpy()[0].tolist())
+                action = self.forward_PolicyNet(state, (np.random.normal(0.0, 0.5), np.random.normal(0.0, 0.5), np.random.normal(0.0, 0.5)))
+                action = action.data.numpy()[0]
+                action = np.array(action)
                 if random.uniform(0.0, 1.0) < self.exploration_prob:
                     x_val = random.uniform(-1.0, 1.0)
                     action = (x_val, random.choice([-1.0, 1.0])*np.sqrt(1.0 - x_val*x_val))
