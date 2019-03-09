@@ -332,12 +332,13 @@ class GymDelay(gym.Wrapper):
 
         self.act_dim = self.action_space.shape[0]
         self.obs_dim = self.observation_space.shape[0]
+    
+        self._max_episode_steps = self.env._max_episode_steps
+
+        init_state = self.reset()
 
         self.act_buffer = [ [0]*self.act_dim ]*self.act_delay
-        self.obs_buffer = [ [ [0]*self.obs_dim, 0, False, None ] ]*self.obs_delay
-        
-        self._max_episode_steps = self.env._max_episode_steps
-        self.reset()
+        self.obs_buffer = [ [ init_state, 0, False, None ] ]*self.obs_delay
 
     def reset(self, **kwargs):
             self.act_buffer = [ [0]*self.act_dim ]*self.act_delay
