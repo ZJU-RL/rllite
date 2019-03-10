@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='rllite',
-    version='0.1.2',
+    version='0.2.0',
     author='zjurl',
     author_email='wangyunkai.zju@gmail.com',
     url='https://github.com/ZJU-RL/rllite',

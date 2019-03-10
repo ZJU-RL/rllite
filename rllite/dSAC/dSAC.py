@@ -55,7 +55,7 @@ class dSAC(SAC):
             # delay gym env
             env = GymDelay(env, self.act_delay, self.obs_delay)
         else:
-            env = external_env
+            env = GymDelay(external_env, self.act_delay, self.obs_delay)
         if self.max_episode_steps != None:
             env._max_episode_steps = self.max_episode_steps
         else:

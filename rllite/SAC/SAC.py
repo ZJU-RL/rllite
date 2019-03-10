@@ -91,19 +91,6 @@ class SAC():
         self.episode_num = 0
         self.episode_timesteps = 0
         
-    def save(self, directory, filename):
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-            
-        torch.save(self.value_net.state_dict(), '%s/%s_value_net.pkl' % (directory, filename))
-        torch.save(self.soft_q_net.state_dict(), '%s/%s_soft_q_net.pkl' % (directory, filename))
-        torch.save(self.policy_net.state_dict(), '%s/%s_policy_net.pkl' % (directory, filename))
-
-    def load(self, directory, filename):
-        self.value_net.load_state_dict(torch.load('%s/%s_value_net.pkl' % (directory, filename)))
-        self.soft_q_net.load_state_dict(torch.load('%s/%s_soft_q_net.pkl' % (directory, filename)))
-        self.policy_net.load_state_dict(torch.load('%s/%s_policy_net.pkl' % (directory, filename)))
-        
     def train_step(self, 
            mean_lambda=1e-3,
            std_lambda=1e-3,

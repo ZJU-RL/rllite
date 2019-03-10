@@ -9,7 +9,7 @@
 | ACER                  | Improving |                    |                          |             |
 | DDPG                  | Improving |                    |                          |             |
 | HER                   | Improving |                    |                          |             |
-| PPO                   | Improving |                    |                          |             |
+| PPO                   | Improving | :heavy_check_mark: | ??? | :heavy_check_mark: |
 | TRPO                  | Improving |                    |                          |             |
 | GAIL                  | Improving |                    |                          |             |
 | PG                    | TODO |                    |                          |             |
