@@ -10,68 +10,73 @@ from rllite.common.train import weights_init
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class QNet(nn.Module):
-    def __init__(self, num_inputs, num_actions, hidden_size, init_w=3e-3):
+    def __init__(self, num_inputs, num_actions, hidden_size):
         super(QNet, self).__init__()
         
         self.linear1 = nn.Linear(num_inputs + num_actions, hidden_size)
         self.linear2 = nn.Linear(hidden_size, hidden_size)
         self.linear3 = nn.Linear(hidden_size, 1)
-        
-        #self.linear3.weight.data.uniform_(-init_w, init_w)
-        #self.linear3.bias.data.uniform_(-init_w, init_w)
+
         self.apply(weights_init)
         
     def forward(self, state, action):
+        """
+        [batch_size x state_dim] + [batch_size x action_dim]
+        ->[batch_size x (state_dim + action_dim)]
+        """
         x = torch.cat([state, action], 1)
-        x = F.relu(self.linear1(x))
-        x = F.relu(self.linear2(x))
+        x = F.leaky_relu(self.linear1(x))
+        x = F.leaky_relu(self.linear2(x))
         x = self.linear3(x)
         return x
     
 class ValueNet(nn.Module):
-    def __init__(self, state_dim, hidden_dim, init_w=3e-3):
+    def __init__(self, state_dim, hidden_dim):
         super(ValueNet, self).__init__()
         
         self.linear1 = nn.Linear(state_dim, hidden_dim)
         self.linear2 = nn.Linear(hidden_dim, hidden_dim)
         self.linear3 = nn.Linear(hidden_dim, 1)
         
-        #self.linear3.weight.data.uniform_(-init_w, init_w)
-        #self.linear3.bias.data.uniform_(-init_w, init_w)
         self.apply(weights_init)
         
     def forward(self, state):
-        x = F.relu(self.linear1(state))
-        x = F.relu(self.linear2(x))
+        x = F.leaky_relu(self.linear1(state))
+        x = F.leaky_relu(self.linear2(x))
         x = self.linear3(x)
         return x
 
 class PolicyNet(nn.Module):
-    def __init__(self, num_inputs, num_actions, hidden_size, init_w=3e-3):
+    def __init__(self, num_inputs, num_actions, hidden_size):
         super(PolicyNet, self).__init__()
         
         self.linear1 = nn.Linear(num_inputs, hidden_size)
         self.linear2 = nn.Linear(hidden_size, hidden_size)
         self.linear3 = nn.Linear(hidden_size, num_actions)
         
-        #self.linear3.weight.data.uniform_(-init_w, init_w)
-        #self.linear3.bias.data.uniform_(-init_w, init_w)
         self.apply(weights_init)
         
     def forward(self, state):
-        x = F.relu(self.linear1(state))
-        x = F.relu(self.linear2(x))
+        x = F.leaky_relu(self.linear1(state))
+        x = F.leaky_relu(self.linear2(x))
         x = torch.tanh(self.linear3(x))
         return x
     
     def get_action(self, state):
+        """
+        [state_dim]->[1 x state_dim]
+        """
         state  = torch.FloatTensor(state).unsqueeze(0).to(device)
         action = self.forward(state)
+        """
+        detach 'action' from the current graph
+        [1 x action_dim]->[action_dim]
+        """
         return action.detach().cpu().numpy()[0]
     
 class PolicyNet2(nn.Module):
     # for SAC
-    def __init__(self, num_inputs, num_actions, hidden_size, init_w=3e-3, log_std_min=-20, log_std_max=2):
+    def __init__(self, num_inputs, num_actions, hidden_size, log_std_min=-20, log_std_max=2):
         super(PolicyNet2, self).__init__()
         
         self.log_std_min = log_std_min
@@ -81,17 +86,14 @@ class PolicyNet2(nn.Module):
         self.linear2 = nn.Linear(hidden_size, hidden_size)
         
         self.mean_linear = nn.Linear(hidden_size, num_actions)
-        #self.mean_linear.weight.data.uniform_(-init_w, init_w)
-        #self.mean_linear.bias.data.uniform_(-init_w, init_w)
         
         self.log_std_linear = nn.Linear(hidden_size, num_actions)
-        #self.log_std_linear.weight.data.uniform_(-init_w, init_w)
-        #self.log_std_linear.bias.data.uniform_(-init_w, init_w)
+        
         self.apply(weights_init)
         
     def forward(self, state):
-        x = F.relu(self.linear1(state))
-        x = F.relu(self.linear2(x))
+        x = F.leaky_relu(self.linear1(state))
+        x = F.leaky_relu(self.linear2(x))
         
         mean    = self.mean_linear(x)
         log_std = self.log_std_linear(x)
@@ -121,8 +123,8 @@ class PolicyNet2(nn.Module):
         z      = normal.sample()
         action = torch.tanh(z)
         
-        action  = action.detach().cpu().numpy()
-        return action[0]
+        action  = action.detach().cpu().numpy()[0]
+        return action
     
 class ActorCritic(nn.Module):
     # Discrete
@@ -131,14 +133,14 @@ class ActorCritic(nn.Module):
         
         self.actor = nn.Sequential(
             nn.Linear(num_inputs, hidden_size),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(hidden_size, num_outputs),
             nn.Softmax(dim=1),
         )
         
         self.critic = nn.Sequential(
             nn.Linear(num_inputs, hidden_size),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(hidden_size, 1)
         )
         
@@ -184,13 +186,13 @@ class ActorCritic3(nn.Module):
         
         self.critic = nn.Sequential(
             nn.Linear(num_inputs, hidden_size),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(hidden_size, 1)
         )
         
         self.actor = nn.Sequential(
             nn.Linear(num_inputs, hidden_size),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(hidden_size, num_outputs),
         )
         self.log_std = nn.Parameter(torch.ones(1, num_outputs) * std)
