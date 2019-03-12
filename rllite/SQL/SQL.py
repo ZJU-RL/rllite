@@ -13,9 +13,7 @@ from rllite.common import ReplayBuffer,NormalizedActions
 
 from tensorboardX import SummaryWriter
 
-#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")    
-device = torch.device("cpu")
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")    
 
 class SQL():
     def __init__(
@@ -59,12 +57,12 @@ class SQL():
             self.max_episode_steps = env._max_episode_steps
         self.env = NormalizedActions(env)
         #self.env = env
-        action_dim = self.env.action_space.shape[0]
-        state_dim  = self.env.observation_space.shape[0]
-        hidden_dim = 256
-        print(state_dim, action_dim)
-        self.q_net = QNet(state_dim, action_dim, hidden_dim).to(device)
-        self.policy_net = PolicyNet(state_dim, action_dim, hidden_dim).to(device)
+        self.action_dim = self.env.action_space.shape[0]
+        self.state_dim  = self.env.observation_space.shape[0]
+        self.hidden_dim = 256
+
+        self.q_net = QNet(self.state_dim, self.action_dim, self.hidden_dim).to(device)
+        self.policy_net = PolicyNet(self.state_dim, self.action_dim, self.hidden_dim).to(device)
         
         try:
             self.load(directory=self.load_dir, filename=self.env_name)
@@ -106,19 +104,15 @@ class SQL():
         self.policy_net.load_state_dict(torch.load('%s/%s_policy_net.pkl' % (directory, filename)))
     
     def forward_QNet(self, obs, action):
-        #inputs = torch.FloatTensor([obs + action])
-        #inputs = torch.cat((torch.FloatTensor(obs), torch.FloatTensor(action))
         obs = torch.FloatTensor(obs).to(device)
         action = torch.FloatTensor(action).to(device)
-        print('obs:',obs)
-        print('action',action)
-        q_pred = self.q_net(obs, action)
+        q_pred = self.q_net(obs, action).detach().cpu().numpy()#[0]
         return q_pred
 
     def forward_PolicyNet(self, obs, noise):
-        inputs = torch.FloatTensor([obs + noise])
+        inputs = torch.FloatTensor([obs + noise]).unsqueeze(0).to(device)
         action_pred = self.policy_net(inputs)
-        return action_pred
+        return action_pred.detach().cpu().numpy()[0][0]
     
     def rbf_kernel(self, input1, input2):
         return np.exp(-3.14*(np.dot(input1-input2,input1-input2)))
@@ -129,48 +123,39 @@ class SQL():
         return [x * mult_val for x in diff]
     
     def train_step(self):
-        #i = random.randint(0, len(self.replay_buffer.buffer)-1)
-        #current_state = self.replay_buffer.buffer[i][0]
-        #current_action = self.replay_buffer.buffer[i][1]
-        #current_reward = self.replay_buffer.buffer[i][2]
-        #next_state = self.replay_buffer.buffer[i][3]
-        
-        state, action, reward, next_state, done = self.replay_buffer.sample(self.batch_size)
-        current_state      = torch.FloatTensor(state).to(device)
-        next_state = torch.FloatTensor(next_state).to(device)
-        current_action     = torch.FloatTensor(action).to(device)
-        current_reward     = torch.FloatTensor(reward).unsqueeze(1).to(device)
-        #done       = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
-
+        current_state, current_action, current_reward, next_state, done = self.replay_buffer.sample(self.batch_size)
         # Perform updates on the Q-Network
         best_q_val_next = 0
         for j in range(32):
             # Sample 32 actions and use them in the next state to get an estimate of the state value
-            action_temp = [self.action_set[j][1]]*self.batch_size
-            q_value_temp = self.forward_QNet(next_state, action_temp).data.numpy()[0][0]
-            #print(q_value_temp)
+            action_temp = [[self.action_set[j][1]]]*self.batch_size
+            q_value_temp = self.forward_QNet(next_state, action_temp)
             q_value_temp = (1.0/self.value_alpha) * q_value_temp
             q_value_temp = np.exp(q_value_temp) / (1.0/32)
             best_q_val_next += q_value_temp * (1.0/32)
+            
         best_q_val_next = self.value_alpha * np.log(best_q_val_next)
-        #inputs_cur = torch.FloatTensor([(current_state + current_action)])
-        #predicted_q = self.q_net(inputs_cur)
-        current_state = torch.FloatTensor(current_state)
-        current_action = torch.FloatTensor(current_action)
-        print(current_state, current_action)
-        predicted_q = self.q_net(current_state, current_action)
-        
+        current_reward = current_reward.reshape(self.batch_size, 1)
+        predicted_q = self.forward_QNet(current_state, current_action)
         expected_q = current_reward + 0.99 * best_q_val_next
-        expected_q = (1-self.alpha) * predicted_q.data.numpy()[0][0] + self.alpha * expected_q
-        expected_q = torch.FloatTensor([[expected_q]])
+        expected_q = (1-self.alpha) * predicted_q + self.alpha * expected_q
+        
+        predicted_q = torch.FloatTensor(predicted_q).to(device)
+        expected_q = torch.FloatTensor(expected_q).to(device)
+        print('BUG::', type(predicted_q), type(expected_q))
+        
+        self.q_optimizer.zero_grad()
         loss = self.q_criterion(predicted_q, expected_q)
+        print(loss, type(loss))
         loss.backward()
+        self.q_optimizer.step()
 
         # Perform updates on the Policy-Network using SVGD
+        print('current_state:',current_state)
         action_predicted = self.forward_PolicyNet(current_state, (0.0, 0.0, 0.0))
         final_action_gradient = [0.0, 0.0]
         for j in range(32):
-            action_temp = tuple(self.forward_PolicyNet(current_state, (np.random.normal(0.0, 0.5), np.random.normal(0.0, 0.5),np.random.normal(0.0, 0.5))).data.numpy()[0].tolist())
+            action_temp = tuple(self.forward_PolicyNet(current_state, (np.random.normal(0.0, 0.5))).data.numpy()[0].tolist())
             inputs_temp = torch.FloatTensor([current_state + action_temp])
             predicted_q = self.q_net(inputs_temp)
 
@@ -211,16 +196,12 @@ class SQL():
             episode_reward = 0
             
             for step in range(self.max_episode_steps):
-                #action = self.policy_net.get_action(state)
                 action = self.forward_PolicyNet(state, (np.random.normal(0.0, 0.5), np.random.normal(0.0, 0.5), np.random.normal(0.0, 0.5)))
-                action = action.data.numpy()[0]
-                action = np.array(action)
                 if random.uniform(0.0, 1.0) < self.exploration_prob:
                     x_val = random.uniform(-1.0, 1.0)
                     action = (x_val, random.choice([-1.0, 1.0])*np.sqrt(1.0 - x_val*x_val))
                 
                 next_state, reward, done, _ = self.env.step(action)
-                
                 self.replay_buffer.push(state, action, reward, next_state, done)
 
                 state = next_state

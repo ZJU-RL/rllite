@@ -134,12 +134,16 @@ class ActorCritic(nn.Module):
         self.actor = nn.Sequential(
             nn.Linear(num_inputs, hidden_size),
             nn.LeakyReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.LeakyReLU(),
             nn.Linear(hidden_size, num_outputs),
             nn.Softmax(dim=1),
         )
         
         self.critic = nn.Sequential(
             nn.Linear(num_inputs, hidden_size),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_size, hidden_size),
             nn.LeakyReLU(),
             nn.Linear(hidden_size, 1)
         )
@@ -161,12 +165,16 @@ class ActorCritic2(nn.Module):
         self.actor = nn.Sequential(
             nn.Linear(num_inputs, hidden_size),
             nn.Tanh(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.Tanh(),
             nn.Linear(hidden_size, num_actions),
             nn.Softmax(dim=1)
         )
         
         self.critic = nn.Sequential(
             nn.Linear(num_inputs, hidden_size),
+            nn.Tanh(),
+            nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, num_actions)
         )
@@ -184,17 +192,22 @@ class ActorCritic3(nn.Module):
     def __init__(self, num_inputs, num_outputs, hidden_size, std=0.0):
         super(ActorCritic3, self).__init__()
         
-        self.critic = nn.Sequential(
-            nn.Linear(num_inputs, hidden_size),
-            nn.LeakyReLU(),
-            nn.Linear(hidden_size, 1)
-        )
-        
         self.actor = nn.Sequential(
             nn.Linear(num_inputs, hidden_size),
             nn.LeakyReLU(),
-            nn.Linear(hidden_size, num_outputs),
+            nn.Linear(hidden_size, hidden_size),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_size, num_outputs)
         )
+        
+        self.critic = nn.Sequential(
+            nn.Linear(num_inputs, hidden_size),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.LeakyReLU(),
+            nn.Linear(hidden_size, 1)
+        )
+
         self.log_std = nn.Parameter(torch.ones(1, num_outputs) * std)
         
         self.apply(weights_init)

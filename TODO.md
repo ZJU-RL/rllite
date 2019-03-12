@@ -11,7 +11,7 @@
 | HER                   | Improving |                    |                          |             |
 | PPO                   | Improving | :heavy_check_mark: | ??? | :heavy_check_mark: |
 | TRPO                  | Improving |                    |                          |             |
-| GAIL                  | Improving |                    |                          |             |
+| GAIL                  | Improving | :heavy_check_mark: | ??? | :heavy_check_mark: |
 | PG                    | TODO |                    |                          |             |
 | DQN                   | Improving |                    |                          |             |
 | DoubleDQN             | Improving |                    |                          |             |

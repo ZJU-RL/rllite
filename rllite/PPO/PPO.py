@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import os
 import gym
 import numpy as np
 
@@ -14,7 +13,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class PPO():
     def __init__(
             self,
-            env_name = 'Pendulum-v0',
+            env_name = 'BipedalWalkerHardcore-v2',
             load_dir = './ckpt',
             log_dir = "./log",
             seed = 1,
@@ -65,25 +64,8 @@ class PPO():
             
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
         
-        self.total_steps = 0
-        self.episode_num = 0
-        self.episode_timesteps = 0
-        
+        self.total_steps = 0        
         self.state = self.envs.reset()
-        #self.early_stop = False
-        
-    def save(self, directory, filename):
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-            
-        torch.save(self.value_net.state_dict(), '%s/%s_value_net.pkl' % (directory, filename))
-        torch.save(self.soft_q_net.state_dict(), '%s/%s_soft_q_net.pkl' % (directory, filename))
-        torch.save(self.policy_net.state_dict(), '%s/%s_policy_net.pkl' % (directory, filename))
-
-    def load(self, directory, filename):
-        self.value_net.load_state_dict(torch.load('%s/%s_value_net.pkl' % (directory, filename)))
-        self.soft_q_net.load_state_dict(torch.load('%s/%s_soft_q_net.pkl' % (directory, filename)))
-        self.policy_net.load_state_dict(torch.load('%s/%s_policy_net.pkl' % (directory, filename)))
         
     def ppo_iter(self, states, actions, log_probs, returns, advantage):
         batch_size = states.size(0)
@@ -145,7 +127,7 @@ class PPO():
                 if self.total_steps % 100 == 0:
                     test_reward = np.mean([test_env2(self.env, self.model) for _ in range(10)])
                     self.writer.add_scalar('test_reward', test_reward, self.total_steps)
-                    #if test_reward > self.threshold_reward: self.early_stop = True
+
                 if self.total_steps % self.save_steps_num == 0:
                     self.model.save(directory=self.load_dir, filename=self.env_name)
         
