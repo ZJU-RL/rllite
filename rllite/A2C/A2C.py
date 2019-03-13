@@ -10,7 +10,7 @@ from rllite.common import ActorCritic,DummyVecEnv,plot,make_env,compute_returns,
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  
     
-class AC():
+class A2C():
     def __init__(self):
         self.num_envs = 8
         self.env_name = "CartPole-v0"
@@ -86,5 +86,5 @@ class AC():
             self.optimizer.step()
         
 if __name__ == '__main__':
-    model = AC()
+    model = A2C()
     model.learn()

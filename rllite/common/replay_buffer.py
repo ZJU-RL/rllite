@@ -100,6 +100,19 @@ class ReplayBuffer3(object):
         idxes = [random.randint(0, len(self._storage) - 1) for _ in range(batch_size)]
         return self._encode_sample(idxes)
 
+class ReplayBuffer4(object):
+    def __init__(self, capacity):
+        self.buffer = deque(maxlen=int(capacity))
+    
+    def push(self, state, action, reward, next_state, done, goal):
+        self.buffer.append((state, action, reward, next_state, done, goal))
+    
+    def sample(self, batch_size):
+        state, action, reward, next_state, done, goal = zip(*random.sample(self.buffer, batch_size))
+        return np.stack(state), action, reward, np.stack(next_state), done, np.stack(goal)
+    
+    def __len__(self):
+        return len(self.buffer)
         
 class EpisodicReplayMemory(object):
     def __init__(self, capacity, max_episode_length):

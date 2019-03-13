@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+import os
 import gym
 import numpy as np
 
@@ -60,10 +60,10 @@ class DDPG():
         action_dim = self.env.action_space.shape[0]
         hidden_dim = 256
         
-        self.value_net  = QNet(state_dim, action_dim, hidden_dim).to(device)
+        self.q_net  = QNet(state_dim, action_dim, hidden_dim).to(device)
         self.policy_net = PolicyNet(state_dim, action_dim, hidden_dim).to(device)
         
-        self.target_value_net  = QNet(state_dim, action_dim, hidden_dim).to(device)
+        self.target_q_net  = QNet(state_dim, action_dim, hidden_dim).to(device)
         self.target_policy_net = PolicyNet(state_dim, action_dim, hidden_dim).to(device)
         
         try:
@@ -72,13 +72,13 @@ class DDPG():
         except:
             print('WARNING: No model to load !')
             
-        soft_update(self.value_net, self.target_value_net, soft_tau=1.0)
+        soft_update(self.q_net, self.target_q_net, soft_tau=1.0)
         soft_update(self.policy_net, self.target_policy_net, soft_tau=1.0)
             
-        value_lr  = 1e-3
+        q_lr  = 1e-3
         policy_lr = 1e-4
         
-        self.value_optimizer  = optim.Adam(self.value_net.parameters(),  lr=value_lr)
+        self.value_optimizer  = optim.Adam(self.q_net.parameters(),  lr=q_lr)
         self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
         
         self.value_criterion = nn.MSELoss()
@@ -88,6 +88,17 @@ class DDPG():
         self.total_steps = 0
         self.episode_num = 0
         self.episode_timesteps = 0
+        
+    def save(self, directory, filename):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            
+        torch.save(self.q_net.state_dict(), '%s/%s_q_net.pkl' % (directory, filename))
+        torch.save(self.policy_net.state_dict(), '%s/%s_policy_net.pkl' % (directory, filename))
+
+    def load(self, directory, filename):
+        self.q_net.load_state_dict(torch.load('%s/%s_q_net.pkl' % (directory, filename)))
+        self.policy_net.load_state_dict(torch.load('%s/%s_policy_net.pkl' % (directory, filename)))
         
     def train_step(
             self,
@@ -104,15 +115,15 @@ class DDPG():
         reward     = torch.FloatTensor(reward).unsqueeze(1).to(device)
         done       = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
     
-        policy_loss = self.value_net(state, self.policy_net(state))
+        policy_loss = self.q_net(state, self.policy_net(state))
         policy_loss = -policy_loss.mean()
     
         next_action    = self.target_policy_net(next_state)
-        target_value   = self.target_value_net(next_state, next_action.detach())
+        target_value   = self.target_q_net(next_state, next_action.detach())
         expected_value = reward + (1.0 - done) * self.discount * target_value
         expected_value = torch.clamp(expected_value, min_value, max_value)
     
-        value = self.value_net(state, action)
+        value = self.q_net(state, action)
         value_loss = self.value_criterion(value, expected_value.detach())
     
     
@@ -124,7 +135,7 @@ class DDPG():
         value_loss.backward()
         self.value_optimizer.step()
     
-        soft_update(self.value_net, self.target_value_net, self.tau)
+        soft_update(self.q_net, self.target_q_net, self.tau)
         soft_update(self.policy_net, self.target_policy_net, self.tau)
         
     def predict(self, state):

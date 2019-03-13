@@ -1,4 +1,4 @@
-# :heavy_multiplication_x:TODO
+# TODO
 
 | Algorithm             | Status    | Continues          | Discrete                 | Distributed |
 | --------------------- | --------- | ------------------ | ------------------------ | ----------- |
@@ -8,7 +8,7 @@
 | A2C                   | Improving |                    |                          |             |
 | ACER                  | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_check_mark: |
 | DDPG                  | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_multiplication_x: |
-| HER                   | Improving |                    |                          |             |
+| HER                   | Improving | - | - | - |
 | PPO                   | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_check_mark: |
 | TRPO                  | Improving |                    |                          |             |
 | GAIL                  | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_check_mark: |
@@ -25,3 +25,27 @@
 
 
 
+# Algorithms and Environments
+
+
+
+| Envs/Algos               | DDPG/TD3/SAC             | PPO/GAIL                 | ACER                     | SQL  |      |      |
+| ------------------------ | ------------------------ | ------------------------ | ------------------------ | ---- | ---- | ---- |
+| Pendulum-v0              | :heavy_check_mark:       | :heavy_check_mark:       | :heavy_multiplication_x: |      |      |      |
+| MountainCarContinuous-v0 | :heavy_check_mark:       | :heavy_check_mark:       | :heavy_multiplication_x: |      |      |      |
+| BipedalWalker-v2         | :heavy_check_mark:       | :heavy_check_mark:       | :heavy_multiplication_x: |      |      |      |
+| LunarLanderContinuous-v2 | :heavy_check_mark:       | :heavy_check_mark:       | :heavy_multiplication_x: |      |      |      |
+| BipedalWalkerHardcore-v2 | :heavy_check_mark:       | :heavy_check_mark:       | :heavy_multiplication_x: |      |      |      |
+| CartPole-v1              | :heavy_multiplication_x: | :heavy_multiplication_x: | :heavy_check_mark:       |      |      |      |
+| MountainCar-v0           | :heavy_multiplication_x: | :heavy_multiplication_x: | :heavy_check_mark:       |      |      |      |
+| Acrobot-v1               | :heavy_multiplication_x: | :heavy_multiplication_x: | :heavy_check_mark:       |      |      |      |
+| LunarLander-v2           | :heavy_multiplication_x: | :heavy_multiplication_x: | :heavy_check_mark:       |      |      |      |
+|                          |                          |                          |                          |      |      |      |
+|                          |                          |                          |                          |      |      |      |
+|                          |                          |                          |                          |      |      |      |
+|                          |                          |                          |                          |      |      |      |
+|                          |                          |                          |                          |      |      |      |
+|                          |                          |                          |                          |      |      |      |
+|                          |                          |                          |                          |      |      |      |
+|                          |                          |                          |                          |      |      |      |
+|                          |                          |                          |                          |      |      |      |
