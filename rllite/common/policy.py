@@ -157,6 +157,17 @@ class ActorCritic(nn.Module):
         dist  = Categorical(probs)
         return dist, value
     
+    def save(self, directory, filename):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            
+        torch.save(self.actor.state_dict(), '%s/%s_actor.pkl' % (directory, filename))
+        torch.save(self.critic.state_dict(), '%s/%s_critic.pkl' % (directory, filename))
+
+    def load(self, directory, filename):
+        self.actor.load_state_dict(torch.load('%s/%s_actor.pkl' % (directory, filename)))
+        self.critic.load_state_dict(torch.load('%s/%s_critic.pkl' % (directory, filename)))
+    
 class ActorCritic2(nn.Module):
     # for ACER
     def __init__(self, num_inputs, num_actions, hidden_size=256):
@@ -186,6 +197,17 @@ class ActorCritic2(nn.Module):
         q_value = self.critic(x)
         value   = (policy * q_value).sum(-1, keepdim=True)
         return policy, q_value, value
+    
+    def save(self, directory, filename):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            
+        torch.save(self.actor.state_dict(), '%s/%s_actor.pkl' % (directory, filename))
+        torch.save(self.critic.state_dict(), '%s/%s_critic.pkl' % (directory, filename))
+
+    def load(self, directory, filename):
+        self.actor.load_state_dict(torch.load('%s/%s_actor.pkl' % (directory, filename)))
+        self.critic.load_state_dict(torch.load('%s/%s_critic.pkl' % (directory, filename)))
     
 class ActorCritic3(nn.Module):
     # for PPO

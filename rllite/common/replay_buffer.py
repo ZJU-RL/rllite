@@ -103,7 +103,7 @@ class ReplayBuffer3(object):
         
 class EpisodicReplayMemory(object):
     def __init__(self, capacity, max_episode_length):
-        self.num_episodes = capacity // max_episode_length
+        self.num_episodes = int(capacity) // int(max_episode_length)
         self.buffer = deque(maxlen=self.num_episodes)
         self.buffer.append([])
         self.position = 0

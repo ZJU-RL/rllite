@@ -1,17 +1,17 @@
-# TODO
+# :heavy_multiplication_x:TODO
 
 | Algorithm             | Status    | Continues          | Discrete                 | Distributed |
 | --------------------- | --------- | ------------------ | ------------------------ | ----------- |
-| SAC                   | Completed | :heavy_check_mark: | ??? | :heavy_multiplication_x: |
-| TD3                   | Completed | :heavy_check_mark: | ??? | :heavy_multiplication_x: |
+| SAC                   | Completed | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_multiplication_x: |
+| TD3                   | Completed | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_multiplication_x: |
 | SQL                   | TODO |                    |                          |             |
 | A2C                   | Improving |                    |                          |             |
-| ACER                  | Improving |                    |                          |             |
-| DDPG                  | Improving |                    |                          |             |
+| ACER                  | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_check_mark: |
+| DDPG                  | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_multiplication_x: |
 | HER                   | Improving |                    |                          |             |
-| PPO                   | Improving | :heavy_check_mark: | ??? | :heavy_check_mark: |
+| PPO                   | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_check_mark: |
 | TRPO                  | Improving |                    |                          |             |
-| GAIL                  | Improving | :heavy_check_mark: | ??? | :heavy_check_mark: |
+| GAIL                  | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_check_mark: |
 | PG                    | TODO |                    |                          |             |
 | DQN                   | Improving |                    |                          |             |
 | DoubleDQN             | Improving |                    |                          |             |

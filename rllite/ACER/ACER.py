@@ -1,31 +1,75 @@
 # -*- coding: utf-8 -*-
+import os
 import gym
 import numpy as np
-
 import torch
 import torch.optim as optim
-
-from rllite.common import ActorCritic2,EpisodicReplayMemory,plot,test_env
+from rllite.common import ActorCritic2,EpisodicReplayMemory,test_env
+from tensorboardX import SummaryWriter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   
     
 class ACER():
-    def __init__(self):
-        self.env = gym.make("CartPole-v0")
+    def __init__(
+            self,
+            env_name = 'CartPole-v0',
+            load_dir = './ckpt',
+            log_dir = "./log",
+            buffer_size = 1e6,
+            seed = 1,
+            max_episode_steps = None,
+            batch_size = 64,
+            max_episode_length = 200,
+            discount = 0.99,
+            num_steps = 5,
+            save_steps_num = 5000,
+            truncation_clip=10,
+            entropy_weight=0.0001,
+            external_env = None
+            ):
+        self.env_name = env_name
+        self.load_dir = load_dir
+        self.log_dir = log_dir
+        self.seed = seed
+        self.max_episode_steps = max_episode_steps
+        self.buffer_size = buffer_size
+        self.max_episode_length = max_episode_length
+        self.batch_size = batch_size
+        self.discount = discount
+        self.num_steps = num_steps
+        self.save_steps_num = save_steps_num
+        self.truncation_clip = truncation_clip
+        self.entropy_weight = entropy_weight
+        
+        torch.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        self.writer = SummaryWriter(log_dir=self.log_dir)
+
+        if external_env == None:
+            self.env = gym.make(self.env_name)
+        else:
+            self.env = external_env
+        if self.max_episode_steps != None:
+            self.env._max_episode_steps = self.max_episode_steps
+        else:
+            self.max_episode_steps = self.env._max_episode_steps
+        
         self.model = ActorCritic2(self.env.observation_space.shape[0], self.env.action_space.n).to(device)
         
+        try:
+            self.model.load(directory=self.load_dir, filename=self.env_name)
+            print('Load model successfully !')
+        except:
+            print('WARNING: No model to load !')
+            
         self.optimizer = optim.Adam(self.model.parameters())
         
-        self.capacity = 1000000
-        self.max_episode_length = 200
-        self.replay_buffer = EpisodicReplayMemory(self.capacity, self.max_episode_length)
+        self.replay_buffer = EpisodicReplayMemory(self.buffer_size, self.max_episode_length)
         
-        self.batch_size = 128
-        self.frame_idx    = 0
-        self.max_frames   = 10000
-        self.num_steps    = 5
-        self.log_interval = 100
-        self.test_rewards = []
+        self.total_steps = 0
+        self.episode_num = 0
+        self.episode_timesteps = 0
+    
         self.state = self.env.reset()
         
     def train_step(self, replay_ratio=4):
@@ -50,22 +94,22 @@ class ACER():
             retrace = retrace.detach()
             self.compute_acer_loss(policies, q_values, values, action, reward, retrace, mask, old_policy)
             
-    def compute_acer_loss(self, policies, q_values, values, actions, rewards, retrace, masks, behavior_policies, gamma=0.99, truncation_clip=10, entropy_weight=0.0001):
+    def compute_acer_loss(self, policies, q_values, values, actions, rewards, retrace, masks, behavior_policies):
         loss = 0
         for step in reversed(range(len(rewards))):
             importance_weight = policies[step].detach() / behavior_policies[step].detach()
     
-            retrace = rewards[step] + gamma * retrace * masks[step]
+            retrace = rewards[step] + self.discount * retrace * masks[step]
             advantage = retrace - values[step]
     
             log_policy_action = policies[step].gather(1, actions[step]).log()
-            truncated_importance_weight = importance_weight.gather(1, actions[step]).clamp(max=truncation_clip)
+            truncated_importance_weight = importance_weight.gather(1, actions[step]).clamp(max=self.truncation_clip)
             actor_loss = -(truncated_importance_weight * log_policy_action * advantage.detach()).mean(0)
     
-            correction_weight = (1 - truncation_clip / importance_weight).clamp(min=0)
+            correction_weight = (1 - self.truncation_clip / importance_weight).clamp(min=0)
             actor_loss -= (correction_weight * policies[step].log() * (q_values[step] - values[step]).detach()).sum(1).mean(0)
             
-            entropy = entropy_weight * -(policies[step].log() * policies[step]).sum(1).mean(0)
+            entropy = self.entropy_weight * -(policies[step].log() * policies[step]).sum(1).mean(0)
     
             q_value = q_values[step].gather(1, actions[step])
             critic_loss = ((retrace - q_value) ** 2 / 2).mean(0)
@@ -79,8 +123,9 @@ class ACER():
         loss.backward()
         self.optimizer.step()
         
-    def learn(self):
-        while self.frame_idx < self.max_frames:
+    def learn(self, max_steps=1e7):
+        while self.total_steps < max_steps:
+            state = self.env.reset()
             q_values = []
             values   = []
             policies = []
@@ -108,7 +153,8 @@ class ACER():
                 
                 state = next_state
                 if done:
-                    state = self.env.reset()
+                    break
+                    #state = self.env.reset()
             
             next_state = torch.FloatTensor(state).unsqueeze(0).to(device)
             _, _, retrace = self.model(next_state)
@@ -116,12 +162,15 @@ class ACER():
             self.compute_acer_loss(policies, q_values, values, actions, rewards, retrace, masks, policies)
             
             self.train_step()
-            
-            if self.frame_idx % self.log_interval == 0:
-                self.test_rewards.append(np.mean([test_env(self.env, self.model) for _ in range(5)]))
-                plot(self.frame_idx, self.test_rewards)
                 
-            self.frame_idx += self.num_steps
+            if self.total_steps % 100 == 0:
+                test_reward = np.mean([test_env(self.env, self.model) for _ in range(10)])
+                self.writer.add_scalar('test_reward', test_reward, self.total_steps)
+
+            if self.total_steps % self.save_steps_num == 0:
+                self.model.save(directory=self.load_dir, filename=self.env_name)
+                
+            self.total_steps += self.num_steps
             
 if __name__ == '__main__':
     model = ACER()

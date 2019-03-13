@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
+from rllite import DDPG
 from rllite.common.policy import ValueNet,QNet,PolicyNet2
 from rllite.common import ReplayBuffer,NormalizedActions,soft_update
 
@@ -14,7 +14,7 @@ from tensorboardX import SummaryWriter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")     
 
-class SAC():
+class SAC(DDPG):
     def __init__(
             self,
             env_name = 'Pendulum-v0',
@@ -28,6 +28,9 @@ class SAC():
             learning_starts = 500,
             tau = 0.005,
             save_eps_num = 100,
+            mean_lambda=1e-3,
+            std_lambda=1e-3,
+            z_lambda=0.0,
             external_env = None
             ):
         self.env_name = env_name
@@ -41,6 +44,9 @@ class SAC():
         self.learning_starts = learning_starts
         self.tau = tau
         self.save_eps_num = save_eps_num
+        self.mean_lambda = mean_lambda
+        self.std_lambda = std_lambda
+        self.z_lambda = z_lambda
         
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
@@ -91,11 +97,20 @@ class SAC():
         self.episode_num = 0
         self.episode_timesteps = 0
         
-    def train_step(self, 
-           mean_lambda=1e-3,
-           std_lambda=1e-3,
-           z_lambda=0.0
-          ):
+    def save(self, directory, filename):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            
+        torch.save(self.value_net.state_dict(), '%s/%s_value_net.pkl' % (directory, filename))
+        torch.save(self.soft_q_net.state_dict(), '%s/%s_soft_q_net.pkl' % (directory, filename))
+        torch.save(self.policy_net.state_dict(), '%s/%s_policy_net.pkl' % (directory, filename))
+
+    def load(self, directory, filename):
+        self.value_net.load_state_dict(torch.load('%s/%s_value_net.pkl' % (directory, filename)))
+        self.soft_q_net.load_state_dict(torch.load('%s/%s_soft_q_net.pkl' % (directory, filename)))
+        self.policy_net.load_state_dict(torch.load('%s/%s_policy_net.pkl' % (directory, filename)))
+        
+    def train_step(self):
         state, action, reward, next_state, done = self.replay_buffer.sample(self.batch_size)
     
         state      = torch.FloatTensor(state).to(device)
@@ -119,9 +134,9 @@ class SAC():
         log_prob_target = expected_new_q_value - expected_value
         policy_loss = (log_prob * (log_prob - log_prob_target).detach()).mean()
         
-        mean_loss = mean_lambda * mean.pow(2).mean()
-        std_loss  = std_lambda  * log_std.pow(2).mean()
-        z_loss    = z_lambda    * z.pow(2).sum(1).mean()
+        mean_loss = self.mean_lambda * mean.pow(2).mean()
+        std_loss  = self.std_lambda  * log_std.pow(2).mean()
+        z_loss    = self.z_lambda    * z.pow(2).sum(1).mean()
     
         policy_loss += mean_loss + std_loss + z_loss
     
@@ -138,40 +153,7 @@ class SAC():
         self.policy_optimizer.step()
         
         soft_update(self.value_net, self.target_value_net, self.tau)
-            
-    def predict(self, state):
-        return self.policy_net.get_action(state)
-    
-    def learn(self, max_steps=1e7):
-        while self.total_steps < max_steps:
-            state = self.env.reset()
-            self.episode_timesteps = 0
-            episode_reward = 0
-            
-            for step in range(self.max_episode_steps):
-                action = self.policy_net.get_action(state)
-                next_state, reward, done, _ = self.env.step(action)
-                
-                self.replay_buffer.push(state, action, reward, next_state, done)
-
-                state = next_state
-                episode_reward += reward
-                self.total_steps += 1
-                self.episode_timesteps += 1
-                
-                if done or self.episode_timesteps == self.max_episode_steps:
-                    if len(self.replay_buffer) > self.learning_starts:
-                        for _ in range(self.episode_timesteps):
-                            self.train_step()
-                        
-                    self.episode_num += 1
-                    if self.episode_num > 0 and self.episode_num % self.save_eps_num == 0:
-                        self.save(directory=self.load_dir, filename=self.env_name)
-                        
-                    self.writer.add_scalar('episode_reward', episode_reward, self.episode_num)    
-                    break
-        self.env.close()
-            
+       
 if __name__ == '__main__':
     model = SAC()
     model.learn()

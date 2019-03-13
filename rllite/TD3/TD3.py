@@ -7,14 +7,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
+from rllite import DDPG
 from rllite.common import ReplayBuffer,NormalizedActions,GaussianExploration,QNet,PolicyNet,soft_update
 
 from tensorboardX import SummaryWriter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class TD3():
+class TD3(DDPG):
     def __init__(
             self,
             env_name = 'Pendulum-v0',
@@ -162,9 +162,6 @@ class TD3():
             soft_update(self.value_net1, self.target_value_net1, soft_tau=self.tau)
             soft_update(self.value_net2, self.target_value_net2, soft_tau=self.tau)
             soft_update(self.policy_net, self.target_policy_net, soft_tau=self.tau)
-        
-    def predict(self, state):
-        return self.policy_net.get_action(state)
     
     def learn(self, max_steps=1e7):
         while self.total_steps < max_steps:
