@@ -12,6 +12,8 @@
 | PPO                   | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_check_mark: |
 | TRPO                  | Improving |                    |                          |             |
 | GAIL                  | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_check_mark: |
+| NAF | TODO |  |  |  |
+| ACKTR | TODO |  |  |  |
 | PG                    | TODO |                    |                          |             |
 | DQN                   | Improving |                    |                          |             |
 | DoubleDQN             | Improving |                    |                          |             |
