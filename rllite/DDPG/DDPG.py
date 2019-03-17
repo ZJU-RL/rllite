@@ -152,7 +152,7 @@ class DDPG():
                 next_state, reward, done, _ = self.env.step(action)
                 
                 self.replay_buffer.push(state, action, reward, next_state, done)
-
+    
                 state = next_state
                 episode_reward += reward
                 self.total_steps += 1
@@ -160,6 +160,7 @@ class DDPG():
                 
                 if done or self.episode_timesteps == self.max_episode_steps:
                     if len(self.replay_buffer) > self.learning_starts:
+                        for _ in range(self.episode_timesteps):
                             self.train_step()
                         
                     self.episode_num += 1

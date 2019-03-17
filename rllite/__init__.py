@@ -16,7 +16,6 @@ from rllite.PrioritizedDQN.PrioritizedDQN import PrioritizedDQN
 from rllite.QuantileRegressionDQN.QuantileRegressionDQN import QuantileRegressionDQN
 from rllite.RainbowDQN.RainbowDQN import RainbowDQN
 from rllite.SAC.SAC import SAC
-from rllite.dSAC.dSAC import dSAC
 #from rllite.SQL.SQL import SQL
 from rllite.TD3.TD3 import TD3
 #from rllite.TRPO.TRPO import TRPO
