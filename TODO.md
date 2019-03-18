@@ -5,7 +5,7 @@
 | SAC                   | Completed | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_multiplication_x: |
 | TD3                   | Completed | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_multiplication_x: |
 | SQL                   | TODO |                    |                          |             |
-| A2C                   | Improving |                    |                          |             |
+| A2C                   | Improving | :heavy_multiplication_x: | :heavy_check_mark: | :heavy_check_mark: |
 | ACER                  | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_check_mark: |
 | DDPG                  | Improving | :heavy_check_mark: | :heavy_multiplication_x: | :heavy_multiplication_x: |
 | HER                   | Improving | - | - | - |

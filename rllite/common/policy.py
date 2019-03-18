@@ -74,10 +74,9 @@ class PolicyNet(nn.Module):
         """
         return action.detach().cpu().numpy()[0]
     
-class PolicyNet2(nn.Module):
-    # for SAC
+class GaussianPolicy(nn.Module):
     def __init__(self, num_inputs, num_actions, hidden_size, log_std_min=-20, log_std_max=2):
-        super(PolicyNet2, self).__init__()
+        super(GaussianPolicy, self).__init__()
         
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max

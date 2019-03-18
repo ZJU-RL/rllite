@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from rllite import DDPG
-from rllite.common.policy import ValueNet,QNet,PolicyNet2
+from rllite.common.policy import ValueNet,QNet,GaussianPolicy
 from rllite.common import ReplayBuffer,NormalizedActions,soft_update
 
 from tensorboardX import SummaryWriter
@@ -70,7 +70,7 @@ class SAC(DDPG):
         self.target_value_net = ValueNet(state_dim, hidden_dim).to(device)
         
         self.soft_q_net = QNet(state_dim, action_dim, hidden_dim).to(device)
-        self.policy_net = PolicyNet2(state_dim, action_dim, hidden_dim).to(device)
+        self.policy_net = GaussianPolicy(state_dim, action_dim, hidden_dim).to(device)
         
         try:
             self.load(directory=self.load_dir, filename=self.env_name)
