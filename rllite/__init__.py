@@ -1,3 +1,4 @@
+from rllite.Base.Base import Base
 from rllite.A2C.A2C import A2C
 #from rllite.A3C.A3C import A3C
 from rllite.ACER.ACER import ACER

@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
-import os
 import gym
 import numpy as np
 import torch
 import torch.optim as optim
+
+from rllite import Base
 from rllite.common import ActorCritic2,EpisodicReplayMemory,test_env
 from tensorboardX import SummaryWriter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   
     
-class ACER():
+class ACER(Base):
     def __init__(
             self,
             env_name = 'CartPole-v0',
@@ -57,7 +58,7 @@ class ACER():
         self.model = ActorCritic2(self.env.observation_space.shape[0], self.env.action_space.n).to(device)
         
         try:
-            self.model.load(directory=self.load_dir, filename=self.env_name)
+            self.load(directory=self.load_dir, filename=self.env_name)
             print('Load model successfully !')
         except:
             print('WARNING: No model to load !')
@@ -71,7 +72,20 @@ class ACER():
         self.episode_timesteps = 0
     
         self.state = self.env.reset()
+       
+    def load(self, directory, filename):
+        self.model.load(directory=self.load_dir, filename=self.env_name)
         
+    def save(self, directory, filename):
+        self.model.save(directory=self.load_dir, filename=self.env_name)
+     
+    def predict(self, state):
+        state = torch.FloatTensor(state).unsqueeze(0).to(device)
+        policy, _, _ = model(state)
+        action = policy.multinomial(1)
+        action = action.item()
+        return action
+    
     def train_step(self, replay_ratio=4):
         if self.batch_size > len(self.replay_buffer) + 1:
             return
@@ -167,8 +181,8 @@ class ACER():
                 test_reward = np.mean([test_env(self.env, self.model) for _ in range(10)])
                 self.writer.add_scalar('test_reward', test_reward, self.total_steps)
 
-            if self.total_steps % self.save_steps_num == 0:
-                self.model.save(directory=self.load_dir, filename=self.env_name)
+            if self.total_steps % self.save_steps_num == 0 and self.total_steps > 0:
+                self.save(directory=self.load_dir, filename=self.env_name)
                 
             self.total_steps += self.num_steps
             

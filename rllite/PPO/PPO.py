@@ -5,12 +5,13 @@ import numpy as np
 import torch
 import torch.optim as optim
 
+from rllite import Base
 from rllite.common import ActorCritic3,make_env,test_env2,compute_gae,SubprocVecEnv
 from tensorboardX import SummaryWriter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   
 
-class PPO():
+class PPO(Base):
     def __init__(
             self,
             env_name = 'BipedalWalkerHardcore-v2',
@@ -57,7 +58,7 @@ class PPO():
         
         self.model = ActorCritic3(self.num_inputs, self.num_outputs, self.hidden_size).to(device)
         try:
-            self.model.load(directory=self.load_dir, filename=self.env_name)
+            self.load(directory=self.load_dir, filename=self.env_name)
             print('Load model successfully !')
         except:
             print('WARNING: No model to load !')
@@ -67,6 +68,19 @@ class PPO():
         self.total_steps = 0        
         self.state = self.envs.reset()
         
+    def load(self, directory, filename):
+        self.model.load(directory=self.load_dir, filename=self.env_name)
+        
+    def save(self, directory, filename):
+        self.model.save(directory=self.load_dir, filename=self.env_name)
+      
+    def predict(self, state):
+        state = torch.FloatTensor(state).unsqueeze(0).to(device)
+        dist, _ = self.model(state)
+        action = dist.sample()
+        action = action.cpu().numpy()[0]
+        return action
+    
     def ppo_iter(self, states, actions, log_probs, returns, advantage):
         batch_size = states.size(0)
         for _ in range(batch_size // self.mini_batch_size):
@@ -129,7 +143,7 @@ class PPO():
                     self.writer.add_scalar('test_reward', test_reward, self.total_steps)
 
                 if self.total_steps % self.save_steps_num == 0:
-                    self.model.save(directory=self.load_dir, filename=self.env_name)
+                    self.save(directory=self.load_dir, filename=self.env_name)
         
             next_state = torch.FloatTensor(next_state).to(device)
             _, next_value = self.model(next_state)

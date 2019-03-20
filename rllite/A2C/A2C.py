@@ -5,13 +5,14 @@ import numpy as np
 import torch
 import torch.optim as optim
 
+from rllite import Base
 from rllite.common import ActorCritic,SubprocVecEnv,make_env,compute_returns,test_env2
 
 from tensorboardX import SummaryWriter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   
     
-class A2C():
+class A2C(Base):
     def __init__(
             self,
             env_name = 'CartPole-v0',
@@ -59,7 +60,7 @@ class A2C():
         
         self.model = ActorCritic(self.num_inputs, self.num_outputs, self.hidden_size).to(device)
         try:
-            self.model.load(directory=self.load_dir, filename=self.env_name)
+            self.load(directory=self.load_dir, filename=self.env_name)
             print('Load model successfully !')
         except:
             print('WARNING: No model to load !')
@@ -69,6 +70,19 @@ class A2C():
         self.total_steps = 0
         self.state = self.envs.reset()
         
+    def load(self, directory, filename):
+        self.model.load(directory=self.load_dir, filename=self.env_name)
+        
+    def save(self, directory, filename):
+        self.model.save(directory=self.load_dir, filename=self.env_name)
+     
+    def predict(self, state):
+        state = torch.FloatTensor(state).unsqueeze(0).to(device)
+        dist, _ = self.model(state)
+        action = dist.sample()
+        action = action.cpu().numpy()[0]
+        return action
+    
     def train_step(self, log_probs, advantage, entropy):
         actor_loss  = -(log_probs * advantage.detach()).mean()
         critic_loss = advantage.pow(2).mean()
@@ -110,7 +124,7 @@ class A2C():
                     self.writer.add_scalar('test_reward', test_reward, self.total_steps)
 
                 if self.total_steps % self.save_steps_num == 0:
-                    self.model.save(directory=self.load_dir, filename=self.env_name)
+                    self.save(directory=self.load_dir, filename=self.env_name)
                     
             next_state = torch.FloatTensor(next_state).to(device)
             _, next_value = self.model(next_state)

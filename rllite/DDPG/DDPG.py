@@ -7,12 +7,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+from rllite import Base
 from rllite.common import ReplayBuffer,NormalizedActions,PolicyNet,QNet,OUNoise,soft_update
 from tensorboardX import SummaryWriter
 
 device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-class DDPG():
+class DDPG(Base):
     def __init__(
             self,
             env_name = 'Pendulum-v0',
