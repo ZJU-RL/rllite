@@ -150,6 +150,7 @@ class DDPG(Base):
             
             for step in range(self.max_episode_steps):
                 action = self.policy_net.get_action(state)
+                action = self.ou_noise.get_action(action, self.total_steps)
                 next_state, reward, done, _ = self.env.step(action)
                 
                 self.replay_buffer.push(state, action, reward, next_state, done)

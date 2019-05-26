@@ -153,7 +153,37 @@ class SAC(DDPG):
         self.policy_optimizer.step()
         
         soft_update(self.value_net, self.target_value_net, self.tau)
-       
+
+    def learn(self, max_steps=1e7):
+        while self.total_steps < max_steps:
+            state = self.env.reset()
+            self.episode_timesteps = 0
+            episode_reward = 0
+            
+            for step in range(self.max_episode_steps):
+                action = self.policy_net.get_action(state)
+                next_state, reward, done, _ = self.env.step(action)
+                
+                self.replay_buffer.push(state, action, reward, next_state, done)
+    
+                state = next_state
+                episode_reward += reward
+                self.total_steps += 1
+                self.episode_timesteps += 1
+                
+                if done or self.episode_timesteps == self.max_episode_steps:
+                    if len(self.replay_buffer) > self.learning_starts:
+                        for _ in range(self.episode_timesteps):
+                            self.train_step()
+                        
+                    self.episode_num += 1
+                    if self.episode_num > 0 and self.episode_num % self.save_eps_num == 0:
+                        self.save(directory=self.load_dir, filename=self.env_name)
+                        
+                    self.writer.add_scalar('episode_reward', episode_reward, self.episode_num)    
+                    break
+        self.env.close()
+        
 if __name__ == '__main__':
     model = SAC()
     model.learn()
